@@ -119,6 +119,17 @@ impl PluginService {
     }
 
     async fn download_and_extract(&self, url: &str, target_dir: &Path) -> Result<()> {
+        if let Some(path) = Self::local_path_from_url(url) {
+            let bytes = fs::read(&path).map_err(|e| {
+                crate::error::AppError::Execution(format!(
+                    "Failed to read local package {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+            return Self::extract_zip(&bytes, target_dir);
+        }
+
         let response = reqwest::get(url).await.map_err(|e| {
             crate::error::AppError::Execution(format!("Failed to download package: {}", e))
         })?;
@@ -130,6 +141,10 @@ impl PluginService {
             crate::error::AppError::Execution(format!("Failed to read package bytes: {}", e))
         })?;
 
+        Self::extract_zip(&bytes, target_dir)
+    }
+
+    fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<()> {
         let reader = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
             crate::error::AppError::Execution(format!("Invalid zip archive: {}", e))
@@ -163,5 +178,13 @@ impl PluginService {
         }
 
         Ok(())
+    }
+
+    fn local_path_from_url(url: &str) -> Option<PathBuf> {
+        if let Some(path) = url.strip_prefix("file://") {
+            let path = path.strip_prefix("localhost/").unwrap_or(path);
+            return Some(PathBuf::from(path));
+        }
+        None
     }
 }
