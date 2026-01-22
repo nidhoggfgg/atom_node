@@ -147,7 +147,7 @@
           <div class="card__header">
             <div>
               <h2>Run Plugin</h2>
-              <p class="muted">Execute a plugin with arguments and environment.</p>
+              <p class="muted">Execute a plugin with JSON parameters.</p>
             </div>
           </div>
           <div class="card__body">
@@ -163,21 +163,12 @@
                 />
               </label>
               <label class="field span-2">
-                <span>Args (one per line)</span>
+                <span>Params (JSON object)</span>
                 <textarea
-                  id="execution-args"
-                  name="args"
-                  rows="3"
-                  placeholder="--flag&#10;value"
-                ></textarea>
-              </label>
-              <label class="field span-2">
-                <span>Env (KEY=VALUE per line)</span>
-                <textarea
-                  id="execution-env"
-                  name="env"
-                  rows="3"
-                  placeholder="ENV_MODE=dev"
+                  id="execution-params"
+                  name="params"
+                  rows="4"
+                  placeholder="{&quot;key&quot;:&quot;value&quot;}"
                 ></textarea>
               </label>
               <div class="form__actions span-2">

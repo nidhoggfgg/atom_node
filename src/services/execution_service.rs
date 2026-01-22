@@ -27,8 +27,6 @@ impl ExecutionService {
     pub async fn execute_plugin(
         &self,
         plugin_id: &str,
-        args: Vec<String>,
-        env: HashMap<String, String>,
         params: HashMap<String, serde_json::Value>,
     ) -> Result<Execution> {
         // Get plugin
@@ -45,7 +43,7 @@ impl ExecutionService {
         std::fs::create_dir_all(&work_dir)?;
 
         let resolved_params = Self::resolve_parameters(&plugin.parameters, params)?;
-        let mut env = env;
+        let mut env = HashMap::new();
         if !resolved_params.is_empty() {
             let params_json = serde_json::to_string(&resolved_params).map_err(|e| {
                 AppError::Execution(format!("Failed to serialize parameters: {}", e))
@@ -57,12 +55,12 @@ impl ExecutionService {
         let exec_result = match plugin.plugin_type {
             crate::models::PluginType::Python => {
                 self.python_executor
-                    .execute(&plugin, args, env, &work_dir)
+                    .execute(&plugin, Vec::new(), env, &work_dir)
                     .await
             }
             crate::models::PluginType::JavaScript => {
                 self.node_executor
-                    .execute(&plugin, args, env, &work_dir)
+                    .execute(&plugin, Vec::new(), env, &work_dir)
                     .await
             }
         };

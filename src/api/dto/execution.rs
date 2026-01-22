@@ -5,8 +5,6 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 pub struct ExecutePluginRequest {
-    pub args: Option<Vec<String>>,
-    pub env: Option<HashMap<String, String>>,
     pub params: Option<HashMap<String, Value>>,
 }
 

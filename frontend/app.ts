@@ -54,8 +54,6 @@ type InstallPluginRequest = {
 };
 
 type ExecutePluginRequest = {
-  args?: string[];
-  env?: Record<string, string>;
   params?: Record<string, unknown>;
 };
 
@@ -74,8 +72,7 @@ const dom = {
   installForm: document.querySelector<HTMLFormElement>("#install-form")!,
   executionForm: document.querySelector<HTMLFormElement>("#execution-form")!,
   executionPluginId: document.querySelector<HTMLInputElement>("#execution-plugin-id")!,
-  executionArgs: document.querySelector<HTMLTextAreaElement>("#execution-args")!,
-  executionEnv: document.querySelector<HTMLTextAreaElement>("#execution-env")!,
+  executionParams: document.querySelector<HTMLTextAreaElement>("#execution-params")!,
   executionList: document.querySelector<HTMLElement>("#execution-list")!,
   executionCount: document.querySelector<HTMLElement>("#execution-count")!,
   refreshExecutions: document.querySelector<HTMLButtonElement>("#refresh-executions")!,
@@ -385,27 +382,21 @@ function shortId(id: string) {
   return id.length > 8 ? `${id.slice(0, 8)}...` : id;
 }
 
-function parseLines(raw: string) {
-  return raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function parseEnv(raw: string) {
-  const env: Record<string, string> = {};
-  parseLines(raw).forEach((line) => {
-    const index = line.indexOf("=");
-    if (index === -1) {
-      return;
-    }
-    const key = line.slice(0, index).trim();
-    const value = line.slice(index + 1).trim();
-    if (key) {
-      env[key] = value;
-    }
-  });
-  return env;
+function parseParams(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error("Params must be valid JSON.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Params must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function handleInstall(event: SubmitEvent) {
@@ -441,20 +432,23 @@ async function handleExecution(event: SubmitEvent) {
     return;
   }
 
-  const args = parseLines(dom.executionArgs.value);
-  const env = parseEnv(dom.executionEnv.value);
-  const payload: ExecutePluginRequest = {};
-  if (args.length) {
-    payload.args = args;
+  let params: Record<string, unknown> = {};
+  try {
+    params = parseParams(dom.executionParams.value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid params.";
+    notify(message, "error");
+    return;
   }
-  if (Object.keys(env).length) {
-    payload.env = env;
+
+  const payload: ExecutePluginRequest = {};
+  if (Object.keys(params).length) {
+    payload.params = params;
   }
 
   try {
     await api.executePlugin(pluginId, payload);
-    dom.executionArgs.value = "";
-    dom.executionEnv.value = "";
+    dom.executionParams.value = "";
     await loadExecutions();
     notify("Execution started.", "success");
   } catch (error) {
@@ -481,7 +475,7 @@ async function handlePluginAction(event: MouseEvent) {
     document
       .querySelector("#execution-section")
       ?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
-    dom.executionArgs.focus();
+    dom.executionParams.focus();
     return;
   }
 
