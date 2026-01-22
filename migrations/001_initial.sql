@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS plugins (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     metadata TEXT,
-    parameters TEXT
+    parameters TEXT,
+    python_venv_path TEXT,
+    python_dependencies TEXT
 );
 
 -- 执行记录表

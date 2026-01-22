@@ -48,6 +48,7 @@ pub async fn install_plugin(
             req.entry_point,
             req.metadata,
             req.parameters,
+            req.python_dependencies,
         )
         .await?;
 

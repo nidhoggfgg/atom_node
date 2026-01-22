@@ -31,7 +31,9 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             metadata TEXT,
-            parameters TEXT
+            parameters TEXT,
+            python_venv_path TEXT,
+            python_dependencies TEXT
         );
 
         -- 执行记录表
@@ -68,6 +70,22 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     let _ = sqlx::query(
         r#"
         ALTER TABLE plugins ADD COLUMN parameters TEXT;
+        "#,
+    )
+    .execute(&pool)
+    .await;
+
+    let _ = sqlx::query(
+        r#"
+        ALTER TABLE plugins ADD COLUMN python_venv_path TEXT;
+        "#,
+    )
+    .execute(&pool)
+    .await;
+
+    let _ = sqlx::query(
+        r#"
+        ALTER TABLE plugins ADD COLUMN python_dependencies TEXT;
         "#,
     )
     .execute(&pool)

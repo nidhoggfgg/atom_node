@@ -2,7 +2,7 @@ use super::PluginExecutor;
 use crate::error::{AppError, Result};
 use crate::models::Plugin;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct PythonExecutor {
@@ -41,8 +41,23 @@ impl PluginExecutor for PythonExecutor {
             )));
         }
 
+        let (python_path, venv_root) = match &plugin.python_venv_path {
+            Some(venv_path) if !venv_path.is_empty() => {
+                let venv_root = PathBuf::from(venv_path);
+                let venv_python = Self::python_executable_path(&venv_root);
+                if !venv_python.is_file() {
+                    return Err(AppError::Execution(format!(
+                        "Python venv not found: {}",
+                        venv_python.display()
+                    )));
+                }
+                (venv_python, Some(venv_root))
+            }
+            _ => (PathBuf::from(&self.python_path), None),
+        };
+
         // Build the command
-        let mut cmd = tokio::process::Command::new(&self.python_path);
+        let mut cmd = tokio::process::Command::new(&python_path);
         cmd.arg(&script_path);
         cmd.current_dir(work_dir);
 
@@ -51,6 +66,27 @@ impl PluginExecutor for PythonExecutor {
         }
 
         // Set environment variables
+        let mut env = env;
+        if let Some(venv_root) = venv_root {
+            let bin_dir = Self::python_bin_dir(&venv_root);
+            env.insert(
+                "VIRTUAL_ENV".to_string(),
+                venv_root.to_string_lossy().to_string(),
+            );
+            let path_separator = if cfg!(windows) { ";" } else { ":" };
+            let existing_path = env
+                .get("PATH")
+                .cloned()
+                .or_else(|| std::env::var("PATH").ok());
+            let new_path = match existing_path {
+                Some(current) if !current.is_empty() => {
+                    format!("{}{}{}", bin_dir.display(), path_separator, current)
+                }
+                _ => bin_dir.to_string_lossy().to_string(),
+            };
+            env.insert("PATH".to_string(), new_path);
+        }
+
         for (key, value) in env {
             cmd.env(key, value);
         }
@@ -66,5 +102,23 @@ impl PluginExecutor for PythonExecutor {
             .ok_or_else(|| AppError::Execution("Failed to get process ID".to_string()))?;
 
         Ok((pid, child))
+    }
+}
+
+impl PythonExecutor {
+    fn python_executable_path(venv_dir: &Path) -> PathBuf {
+        if cfg!(windows) {
+            venv_dir.join("Scripts").join("python.exe")
+        } else {
+            venv_dir.join("bin").join("python")
+        }
+    }
+
+    fn python_bin_dir(venv_dir: &Path) -> PathBuf {
+        if cfg!(windows) {
+            venv_dir.join("Scripts")
+        } else {
+            venv_dir.join("bin")
+        }
     }
 }

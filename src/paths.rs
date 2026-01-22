@@ -6,6 +6,7 @@ const PLUGINS_DIR: &str = "plugins";
 const WORK_DIR: &str = "work_dir";
 const CONF_DIR: &str = "conf";
 const DATA_DIR: &str = "data";
+const PYTHON_ENVS_DIR: &str = "python_envs";
 const HOME_ENV: &str = "ATOM_NODE_HOME";
 
 pub fn install_root() -> Result<PathBuf> {
@@ -47,4 +48,8 @@ pub fn conf_dir() -> Result<PathBuf> {
 
 pub fn data_dir() -> Result<PathBuf> {
     Ok(install_root()?.join(DATA_DIR))
+}
+
+pub fn python_envs_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join(PYTHON_ENVS_DIR))
 }

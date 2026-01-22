@@ -15,6 +15,8 @@ pub struct Plugin {
     pub enabled: bool,
     pub parameters: Option<String>,
     pub metadata: Option<String>,
+    pub python_venv_path: Option<String>,
+    pub python_dependencies: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -55,4 +57,12 @@ pub struct PluginParameter {
     pub param_type: PluginParamType,
     pub description: Option<String>,
     pub default: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "snake_case")]
+pub enum PythonDependencies {
+    Inline { items: Vec<String> },
+    Requirements { path: String },
+    Pyproject { path: String },
 }

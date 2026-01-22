@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::models::{Plugin, PluginParameter};
+use crate::models::{Plugin, PluginParameter, PythonDependencies};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -13,6 +13,7 @@ pub struct InstallPluginRequest {
     pub entry_point: String,
     pub metadata: Option<String>,
     pub parameters: Option<Vec<PluginParameter>>,
+    pub python_dependencies: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -28,6 +29,7 @@ pub struct PluginResponse {
     pub created_at: String,
     pub updated_at: String,
     pub parameters: Option<Vec<PluginParameter>>,
+    pub python_dependencies: Option<PythonDependencies>,
 }
 
 impl TryFrom<Plugin> for PluginResponse {
@@ -35,6 +37,7 @@ impl TryFrom<Plugin> for PluginResponse {
 
     fn try_from(plugin: Plugin) -> Result<Self, Self::Error> {
         let parameters = parse_parameters(&plugin.parameters)?;
+        let python_dependencies = parse_python_dependencies(&plugin.python_dependencies)?;
         Ok(Self {
             id: plugin.id,
             name: plugin.name,
@@ -47,6 +50,7 @@ impl TryFrom<Plugin> for PluginResponse {
             created_at: plugin.created_at.to_rfc3339(),
             updated_at: plugin.updated_at.to_rfc3339(),
             parameters,
+            python_dependencies,
         })
     }
 }
@@ -62,6 +66,22 @@ fn parse_parameters(raw: &Option<String>) -> Result<Option<Vec<PluginParameter>>
     let parameters = serde_json::from_str(trimmed)
         .map_err(|e| AppError::Execution(format!("Invalid plugin parameters: {}", e)))?;
     Ok(Some(parameters))
+}
+
+fn parse_python_dependencies(
+    raw: &Option<String>,
+) -> Result<Option<PythonDependencies>, AppError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let dependencies = serde_json::from_str(trimmed).map_err(|e| {
+        AppError::Execution(format!("Invalid python dependencies: {}", e))
+    })?;
+    Ok(Some(dependencies))
 }
 
 #[derive(Debug, Serialize)]

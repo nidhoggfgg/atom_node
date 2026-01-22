@@ -17,7 +17,8 @@ impl PluginRepository {
         let plugins = sqlx::query_as::<_, Plugin>(
             r#"
             SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
-                   enabled, created_at, updated_at, metadata, parameters
+                   enabled, created_at, updated_at, metadata, parameters,
+                   python_venv_path, python_dependencies
             FROM plugins
             ORDER BY created_at DESC
             "#,
@@ -32,7 +33,8 @@ impl PluginRepository {
         let plugin = sqlx::query_as::<_, Plugin>(
             r#"
             SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
-                   enabled, created_at, updated_at, metadata, parameters
+                   enabled, created_at, updated_at, metadata, parameters,
+                   python_venv_path, python_dependencies
             FROM plugins
             WHERE id = ?
             "#,
@@ -49,7 +51,8 @@ impl PluginRepository {
         let plugin = sqlx::query_as::<_, Plugin>(
             r#"
             SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
-                   enabled, created_at, updated_at, metadata, parameters
+                   enabled, created_at, updated_at, metadata, parameters,
+                   python_venv_path, python_dependencies
             FROM plugins
             WHERE name = ?
             "#,
@@ -65,8 +68,8 @@ impl PluginRepository {
     pub async fn create(&self, plugin: &Plugin) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO plugins (id, name, version, plugin_type, description, author, code, plugin_path, entry_point, enabled, created_at, updated_at, metadata, parameters)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO plugins (id, name, version, plugin_type, description, author, code, plugin_path, entry_point, enabled, created_at, updated_at, metadata, parameters, python_venv_path, python_dependencies)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&plugin.id)
@@ -83,6 +86,8 @@ impl PluginRepository {
         .bind(plugin.updated_at)
         .bind(&plugin.metadata)
         .bind(&plugin.parameters)
+        .bind(&plugin.python_venv_path)
+        .bind(&plugin.python_dependencies)
         .execute(&self.pool)
         .await?;
 
@@ -94,7 +99,7 @@ impl PluginRepository {
         sqlx::query(
             r#"
             UPDATE plugins
-            SET name = ?, version = ?, plugin_type = ?, description = ?, author = ?, plugin_path = ?, entry_point = ?, enabled = ?, updated_at = ?, metadata = ?, parameters = ?
+            SET name = ?, version = ?, plugin_type = ?, description = ?, author = ?, plugin_path = ?, entry_point = ?, enabled = ?, updated_at = ?, metadata = ?, parameters = ?, python_venv_path = ?, python_dependencies = ?
             WHERE id = ?
             "#,
         )
@@ -109,6 +114,8 @@ impl PluginRepository {
         .bind(Utc::now())
         .bind(&plugin.metadata)
         .bind(&plugin.parameters)
+        .bind(&plugin.python_venv_path)
+        .bind(&plugin.python_dependencies)
         .bind(&plugin.id)
         .execute(&self.pool)
         .await?;
