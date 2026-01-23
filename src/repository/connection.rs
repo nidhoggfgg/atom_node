@@ -19,7 +19,8 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
         -- 插件表
         CREATE TABLE IF NOT EXISTS plugins (
             id TEXT PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
+            plugin_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
             version TEXT NOT NULL,
             plugin_type INTEGER NOT NULL,
             description TEXT,
@@ -48,7 +49,7 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
             started_at TEXT NOT NULL,
             finished_at TEXT,
             error_message TEXT,
-            FOREIGN KEY (plugin_id) REFERENCES plugins(id) ON DELETE CASCADE
+            FOREIGN KEY (plugin_id) REFERENCES plugins(plugin_id) ON DELETE CASCADE
         );
 
         CREATE INDEX IF NOT EXISTS idx_executions_plugin_id ON executions(plugin_id);
@@ -86,6 +87,22 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     let _ = sqlx::query(
         r#"
         ALTER TABLE plugins ADD COLUMN python_dependencies TEXT;
+        "#,
+    )
+    .execute(&pool)
+    .await;
+
+    let _ = sqlx::query(
+        r#"
+        ALTER TABLE plugins ADD COLUMN plugin_id TEXT;
+        "#,
+    )
+    .execute(&pool)
+    .await;
+
+    let _ = sqlx::query(
+        r#"
+        UPDATE plugins SET plugin_id = id WHERE plugin_id IS NULL OR plugin_id = '';
         "#,
     )
     .execute(&pool)

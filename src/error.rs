@@ -43,9 +43,9 @@ impl IntoResponse for AppError {
             AppError::PluginNotFound(id) => {
                 (StatusCode::NOT_FOUND, format!("Plugin '{}' not found", id))
             }
-            AppError::PluginAlreadyExists(name) => (
+            AppError::PluginAlreadyExists(id) => (
                 StatusCode::CONFLICT,
-                format!("Plugin '{}' already exists", name),
+                format!("Plugin id '{}' already exists", id),
             ),
             AppError::ExecutionNotFound(id) => (
                 StatusCode::NOT_FOUND,

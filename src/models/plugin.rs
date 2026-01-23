@@ -5,6 +5,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Plugin {
     pub id: String,
+    pub plugin_id: String,
     pub name: String,
     pub version: String,
     pub plugin_type: PluginType,

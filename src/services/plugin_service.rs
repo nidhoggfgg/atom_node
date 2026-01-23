@@ -8,11 +8,12 @@ use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{Cursor, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 struct PackageMetadata {
+    plugin_id: Option<String>,
     name: String,
     version: String,
     plugin_type: String,
@@ -57,6 +58,7 @@ impl PluginService {
         let bytes = Self::fetch_bytes(&package_url, "package").await?;
         let (spec, metadata_dir) = Self::read_metadata_from_zip(&bytes)?;
         let PackageMetadata {
+            plugin_id,
             name,
             version,
             plugin_type,
@@ -67,8 +69,24 @@ impl PluginService {
             parameters,
         } = spec;
 
-        if self.repo.get_by_name(&name).await.is_ok() {
-            return Err(crate::error::AppError::PluginAlreadyExists(name));
+        let plugin_id_raw = plugin_id.unwrap_or_else(|| name.clone());
+        let plugin_id = plugin_id_raw.trim();
+        if plugin_id.is_empty() {
+            return Err(crate::error::AppError::Execution(
+                "Plugin id cannot be empty".to_string(),
+            ));
+        }
+        if plugin_id != plugin_id_raw {
+            return Err(crate::error::AppError::Execution(format!(
+                "Plugin id has leading/trailing whitespace: {}",
+                plugin_id_raw
+            )));
+        }
+        Self::validate_plugin_id(plugin_id)?;
+        if self.repo.get(plugin_id).await.is_ok() {
+            return Err(crate::error::AppError::PluginAlreadyExists(
+                plugin_id.to_string(),
+            ));
         }
 
         if entry_point.trim().is_empty() {
@@ -83,7 +101,8 @@ impl PluginService {
         let mut entry_point = entry_point;
         Self::validate_entry_point(&entry_point)?;
 
-        let plugin_id = Uuid::new_v4().to_string();
+        let plugin_id = plugin_id.to_string();
+        let internal_id = Uuid::new_v4().to_string();
         let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
 
         fs::create_dir_all(&plugin_dir)?;
@@ -146,7 +165,8 @@ impl PluginService {
 
         let now = Utc::now();
         let plugin = Plugin {
-            id: plugin_id,
+            id: internal_id,
+            plugin_id: plugin_id.clone(),
             name,
             version,
             plugin_type,
@@ -385,6 +405,35 @@ impl PluginService {
         {
             return Err(crate::error::AppError::Execution(
                 "Entry point cannot contain '..'".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_plugin_id(plugin_id: &str) -> Result<()> {
+        if plugin_id.contains('/') || plugin_id.contains('\\') {
+            return Err(crate::error::AppError::Execution(
+                "Plugin id cannot contain path separators".to_string(),
+            ));
+        }
+        let path = Path::new(plugin_id);
+        if path.is_absolute() {
+            return Err(crate::error::AppError::Execution(
+                "Plugin id must be a relative identifier".to_string(),
+            ));
+        }
+        let mut components = path.components();
+        match components.next() {
+            Some(Component::Normal(_)) => {}
+            _ => {
+                return Err(crate::error::AppError::Execution(
+                    "Plugin id must be a valid identifier".to_string(),
+                ))
+            }
+        }
+        if components.next().is_some() {
+            return Err(crate::error::AppError::Execution(
+                "Plugin id must be a single path segment".to_string(),
             ));
         }
         Ok(())

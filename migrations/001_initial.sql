@@ -1,7 +1,8 @@
 -- 插件表
 CREATE TABLE IF NOT EXISTS plugins (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
+    plugin_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
     version TEXT NOT NULL,
     plugin_type INTEGER NOT NULL,
     description TEXT,
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS executions (
     started_at TEXT NOT NULL,
     finished_at TEXT,
     error_message TEXT,
-    FOREIGN KEY (plugin_id) REFERENCES plugins(id) ON DELETE CASCADE
+    FOREIGN KEY (plugin_id) REFERENCES plugins(plugin_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_executions_plugin_id ON executions(plugin_id);

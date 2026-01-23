@@ -30,7 +30,7 @@ impl TryFrom<Plugin> for PluginResponse {
         let parameters = parse_parameters(&plugin.parameters)?;
         let python_dependencies = parse_python_dependencies(&plugin.python_dependencies)?;
         Ok(Self {
-            id: plugin.id,
+            id: plugin.plugin_id,
             name: plugin.name,
             version: plugin.version,
             plugin_type: format!("{:?}", plugin.plugin_type),
