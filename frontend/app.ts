@@ -42,15 +42,7 @@ type PluginParameter = {
 };
 
 type InstallPluginRequest = {
-  name: string;
-  version: string;
-  plugin_type: string;
-  description: string;
-  author: string;
   package_url: string;
-  entry_point: string;
-  metadata?: string | null;
-  parameters?: PluginParameter[] | null;
 };
 
 type ExecutePluginRequest = {
@@ -403,14 +395,7 @@ async function handleInstall(event: SubmitEvent) {
   event.preventDefault();
   const data = new FormData(dom.installForm);
   const payload: InstallPluginRequest = {
-    name: String(data.get("name") || ""),
-    version: String(data.get("version") || ""),
-    plugin_type: String(data.get("plugin_type") || ""),
-    description: String(data.get("description") || ""),
-    author: String(data.get("author") || ""),
     package_url: String(data.get("package_url") || ""),
-    entry_point: String(data.get("entry_point") || ""),
-    metadata: String(data.get("metadata") || "").trim() || null,
   };
 
   try {

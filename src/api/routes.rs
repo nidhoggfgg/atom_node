@@ -24,10 +24,6 @@ pub fn create_router(plugin_service: PluginService, execution_service: Execution
         // Plugin management
         .route("/api/plugins", get(plugin::list_plugins))
         .route("/api/plugins", post(plugin::install_plugin))
-        .route(
-            "/api/plugins/install-from-metadata",
-            post(plugin::install_plugins_from_metadata),
-        )
         .route("/api/plugins/{id}", get(plugin::get_plugin))
         .route("/api/plugins/{id}", delete(plugin::uninstall_plugin))
         .route("/api/plugins/{id}/enable", put(plugin::enable_plugin))

@@ -5,19 +5,19 @@ use crate::paths;
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::Value;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
-struct MetadataInstallPlugin {
+struct PackageMetadata {
     name: String,
     version: String,
     plugin_type: String,
     description: String,
     author: String,
-    package_url: String,
     entry_point: String,
     metadata: Option<Value>,
     parameters: Option<Vec<PluginParameter>>,
@@ -25,9 +25,9 @@ struct MetadataInstallPlugin {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum MetadataPayload {
-    Multi { install_plugins: Vec<MetadataInstallPlugin> },
-    Single(MetadataInstallPlugin),
+enum PackageMetadataPayload {
+    Multi { install_plugins: Vec<PackageMetadata> },
+    Single(PackageMetadata),
 }
 
 #[derive(Clone)]
@@ -53,19 +53,20 @@ impl PluginService {
         self.repo.get_by_name(name).await
     }
 
-    pub async fn install_plugin(
-        &self,
-        name: String,
-        version: String,
-        plugin_type: PluginType,
-        description: String,
-        author: String,
-        package_url: String,
-        entry_point: String,
-        metadata: Option<String>,
-        parameters: Option<Vec<PluginParameter>>,
-    ) -> Result<Plugin> {
-        // Check if plugin already exists
+    pub async fn install_plugin(&self, package_url: String) -> Result<Plugin> {
+        let bytes = Self::fetch_bytes(&package_url, "package").await?;
+        let (spec, metadata_dir) = Self::read_metadata_from_zip(&bytes)?;
+        let PackageMetadata {
+            name,
+            version,
+            plugin_type,
+            description,
+            author,
+            entry_point,
+            metadata,
+            parameters,
+        } = spec;
+
         if self.repo.get_by_name(&name).await.is_ok() {
             return Err(crate::error::AppError::PluginAlreadyExists(name));
         }
@@ -75,6 +76,11 @@ impl PluginService {
                 "Entry point cannot be empty".to_string(),
             ));
         }
+
+        let plugin_type = Self::parse_plugin_type(&plugin_type)?;
+        let metadata = metadata.map(Self::stringify_metadata);
+        let parameters_json = Self::validate_parameters(parameters)?;
+        let mut entry_point = entry_point;
         Self::validate_entry_point(&entry_point)?;
 
         let plugin_id = Uuid::new_v4().to_string();
@@ -82,20 +88,34 @@ impl PluginService {
 
         fs::create_dir_all(&plugin_dir)?;
 
-        let parameters_json = Self::validate_parameters(parameters)?;
-
-        if let Err(err) = self.download_and_extract(&package_url, &plugin_dir).await {
+        if let Err(err) = Self::extract_zip(&bytes, &plugin_dir) {
             let _ = fs::remove_dir_all(&plugin_dir);
             return Err(err);
         }
 
         let entry_path = plugin_dir.join(&entry_point);
         if !entry_path.is_file() {
-            let _ = fs::remove_dir_all(&plugin_dir);
-            return Err(crate::error::AppError::Execution(format!(
-                "Entry point not found: {}",
-                entry_path.display()
-            )));
+            if let Some(dir) = metadata_dir.as_deref() {
+                let candidate = dir.join(&entry_point);
+                let candidate_str = candidate.to_string_lossy().to_string();
+                Self::validate_entry_point(&candidate_str)?;
+                let candidate_path = plugin_dir.join(&candidate_str);
+                if candidate_path.is_file() {
+                    entry_point = candidate_str;
+                } else {
+                    let _ = fs::remove_dir_all(&plugin_dir);
+                    return Err(crate::error::AppError::Execution(format!(
+                        "Entry point not found: {}",
+                        entry_path.display()
+                    )));
+                }
+            } else {
+                let _ = fs::remove_dir_all(&plugin_dir);
+                return Err(crate::error::AppError::Execution(format!(
+                    "Entry point not found: {}",
+                    entry_path.display()
+                )));
+            }
         }
 
         let mut python_venv_path = None;
@@ -153,47 +173,6 @@ impl PluginService {
         Ok(plugin)
     }
 
-    pub async fn install_from_metadata_url(&self, metadata_url: &str) -> Result<Vec<Plugin>> {
-        let bytes = Self::fetch_bytes(metadata_url, "metadata").await?;
-        let payload: MetadataPayload = serde_json::from_slice(&bytes).map_err(|e| {
-            AppError::Execution(format!("Invalid metadata JSON: {}", e))
-        })?;
-
-        let mut specs = match payload {
-            MetadataPayload::Single(spec) => vec![spec],
-            MetadataPayload::Multi { install_plugins } => install_plugins,
-        };
-
-        if specs.is_empty() {
-            return Err(AppError::Execution(
-                "Metadata file did not contain any install_plugins entries".to_string(),
-            ));
-        }
-
-        let mut plugins = Vec::with_capacity(specs.len());
-        for spec in specs.drain(..) {
-            let plugin_type = Self::parse_plugin_type(&spec.plugin_type)?;
-            let metadata = spec.metadata.map(Self::stringify_metadata);
-            let package_url = Self::resolve_package_url(metadata_url, &spec.package_url);
-            let plugin = self
-                .install_plugin(
-                    spec.name,
-                    spec.version,
-                    plugin_type,
-                    spec.description,
-                    spec.author,
-                    package_url,
-                    spec.entry_point,
-                    metadata,
-                    spec.parameters,
-                )
-                .await?;
-            plugins.push(plugin);
-        }
-
-        Ok(plugins)
-    }
-
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
         let plugin = self.repo.get(id).await?;
         if !plugin.plugin_path.is_empty() {
@@ -226,11 +205,6 @@ impl PluginService {
     fn plugin_dir_for(plugin_id: &str) -> Result<PathBuf> {
         let base_dir = paths::plugins_dir()?;
         Ok(base_dir.join(plugin_id))
-    }
-
-    async fn download_and_extract(&self, url: &str, target_dir: &Path) -> Result<()> {
-        let bytes = Self::fetch_bytes(url, "package").await?;
-        Self::extract_zip(&bytes, target_dir)
     }
 
     fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<()> {
@@ -267,6 +241,73 @@ impl PluginService {
         }
 
         Ok(())
+    }
+
+    fn read_metadata_from_zip(
+        bytes: &[u8],
+    ) -> Result<(PackageMetadata, Option<PathBuf>)> {
+        let reader = Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+            AppError::Execution(format!("Invalid zip archive: {}", e))
+        })?;
+
+        let mut metadata_index = None;
+        let mut metadata_path = None;
+
+        for i in 0..archive.len() {
+            let file = archive.by_index(i).map_err(|e| {
+                AppError::Execution(format!("Failed to read archive: {}", e))
+            })?;
+            let Some(path) = file.enclosed_name().as_deref().map(Path::to_path_buf) else {
+                return Err(AppError::Execution(
+                    "Invalid file path in archive".to_string(),
+                ));
+            };
+            if path.file_name() == Some(OsStr::new("metadata.json")) {
+                if metadata_index.is_some() {
+                    return Err(AppError::Execution(
+                        "Multiple metadata.json files found in package".to_string(),
+                    ));
+                }
+                metadata_index = Some(i);
+                metadata_path = Some(path);
+            }
+        }
+
+        let Some(index) = metadata_index else {
+            return Err(AppError::Execution(
+                "metadata.json not found in package".to_string(),
+            ));
+        };
+
+        let mut file = archive.by_index(index).map_err(|e| {
+            AppError::Execution(format!("Failed to read metadata.json: {}", e))
+        })?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+
+        let payload: PackageMetadataPayload =
+            serde_json::from_slice(&buffer).map_err(|e| {
+                AppError::Execution(format!("Invalid metadata JSON: {}", e))
+            })?;
+        let spec = match payload {
+            PackageMetadataPayload::Single(spec) => spec,
+            PackageMetadataPayload::Multi { install_plugins } => {
+                if install_plugins.len() != 1 {
+                    return Err(AppError::Execution(
+                        "Package metadata must describe exactly one plugin".to_string(),
+                    ));
+                }
+                install_plugins.into_iter().next().unwrap()
+            }
+        };
+
+        let metadata_dir = metadata_path
+            .as_deref()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .filter(|dir| !dir.as_os_str().is_empty());
+
+        Ok((spec, metadata_dir))
     }
 
     async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>> {
@@ -314,34 +355,6 @@ impl PluginService {
         }
 
         Some(PathBuf::from(url))
-    }
-
-    fn resolve_package_url(metadata_url: &str, package_url: &str) -> String {
-        if package_url.starts_with("http://")
-            || package_url.starts_with("https://")
-            || package_url.starts_with("file://")
-        {
-            return package_url.to_string();
-        }
-
-        let path = Path::new(package_url);
-        if path.is_absolute() {
-            return package_url.to_string();
-        }
-
-        if let Some(local_metadata) = Self::resolve_local_path(metadata_url) {
-            if let Some(parent) = local_metadata.parent() {
-                return parent.join(package_url).to_string_lossy().to_string();
-            }
-        }
-
-        if let Ok(base_url) = reqwest::Url::parse(metadata_url) {
-            if let Ok(joined) = base_url.join(package_url) {
-                return joined.to_string();
-            }
-        }
-
-        package_url.to_string()
     }
 
     fn parse_plugin_type(raw: &str) -> Result<PluginType> {

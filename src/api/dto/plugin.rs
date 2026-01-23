@@ -4,20 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct InstallPluginRequest {
-    pub name: String,
-    pub version: String,
-    pub plugin_type: String,
-    pub description: String,
-    pub author: String,
     pub package_url: String,
-    pub entry_point: String,
-    pub metadata: Option<String>,
-    pub parameters: Option<Vec<PluginParameter>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct InstallPluginFromMetadataRequest {
-    pub metadata_url: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -82,59 +82,19 @@
           <div class="card__header">
             <div>
               <h2>Install Plugin</h2>
-              <p class="muted">Register a new plugin package.</p>
+              <p class="muted">Install a zip package with a metadata.json manifest.</p>
             </div>
           </div>
           <div class="card__body">
             <form id="install-form" class="form grid-form">
-              <label class="field">
-                <span>Name</span>
-                <input name="name" type="text" placeholder="example-plugin" required />
-              </label>
-              <label class="field">
-                <span>Version</span>
-                <input name="version" type="text" placeholder="0.1.0" required />
-              </label>
-              <label class="field">
-                <span>Type</span>
-                <select name="plugin_type" required>
-                  <option value="python">Python</option>
-                  <option value="javascript">JavaScript</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Author</span>
-                <input name="author" type="text" placeholder="team@example" required />
-              </label>
               <label class="field span-2">
-                <span>Description</span>
-                <textarea
-                  name="description"
-                  rows="3"
-                  placeholder="Short summary of what this plugin does."
-                  required
-                ></textarea>
-              </label>
-              <label class="field span-2">
-                <span>Package URL</span>
+                <span>Package URL (zip)</span>
                 <input
                   name="package_url"
                   type="url"
                   placeholder="file:///path/to/package or https://..."
                   required
                 />
-              </label>
-              <label class="field span-2">
-                <span>Entry Point</span>
-                <input name="entry_point" type="text" placeholder="main.py" required />
-              </label>
-              <label class="field span-2">
-                <span>Metadata (optional)</span>
-                <textarea
-                  name="metadata"
-                  rows="3"
-                  placeholder="JSON or additional notes."
-                ></textarea>
               </label>
               <div class="form__actions span-2">
                 <button class="btn btn--primary" type="submit">Install Plugin</button>
