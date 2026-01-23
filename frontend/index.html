@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Atom Node Console</title>
+    <title>Atom Node Plugin Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,171 +13,94 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="page">
-      <header class="hero">
-        <div class="hero__text">
-          <span class="eyebrow">Local Control</span>
-          <h1>Atom Node Console</h1>
-          <p>
-            Manage plugins, execute tasks, and review runtime output from your local
-            atom_node service.
-          </p>
-          <div class="hero__actions">
-            <button class="btn btn--primary" type="button" id="refresh-all">
-              Refresh All
-            </button>
-            <button class="btn btn--ghost" type="button" id="scroll-plugins">
-              Manage Plugins
-            </button>
-          </div>
+    <div class="app">
+      <header class="header">
+        <div class="header__left">
+          <h1 class="header__title">Atom Node Plugin Hub</h1>
+          <button class="btn btn--secondary" type="button" id="btn-install-plugin">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Install Plugin
+          </button>
         </div>
-        <div class="panel connection-panel">
-          <div class="panel__header">
-            <h2>Connection</h2>
-            <span class="status-pill" data-status="offline">
-              <span class="status-dot" id="status-dot"></span>
-              <span id="status-text">Offline</span>
-            </span>
-          </div>
-          <form id="connect-form" class="form">
-            <label class="field">
-              <span>Base URL</span>
-              <input
-                id="base-url"
-                type="url"
-                placeholder="http://localhost:3000"
-                required
-              />
-            </label>
-            <button class="btn btn--primary" type="submit" id="connect-btn">
-              Connect
-            </button>
-          </form>
-          <div class="meta" id="health-meta">
-            <span id="status-meta">No connection yet.</span>
-          </div>
+        <div class="header__right">
+          <button class="status-pill" id="connection-status" type="button">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Not Connected</span>
+          </button>
         </div>
       </header>
 
-      <main class="grid">
-        <section class="card" id="plugins-section" style="--delay: 0.05s">
-          <div class="card__header">
-            <div>
-              <h2>Plugins</h2>
-              <p class="muted">Installed packages and runtime status.</p>
-            </div>
-            <div class="card__actions">
-              <span class="stat" id="plugin-count">0 plugins</span>
-              <button class="btn btn--ghost" type="button" id="refresh-plugins">
-                Refresh
-              </button>
-            </div>
+      <div class="main">
+        <aside class="sidebar">
+          <div class="sidebar__search">
+            <input type="text" id="plugin-search" placeholder="Search plugins..." />
           </div>
-          <div class="card__body">
-            <div class="list" id="plugin-list"></div>
-          </div>
-        </section>
+          <div class="sidebar__plugins" id="plugin-list"></div>
+        </aside>
 
-        <section class="card" id="install-section" style="--delay: 0.12s">
-          <div class="card__header">
-            <div>
-              <h2>Install Plugin</h2>
-              <p class="muted">Install a zip package with a metadata.json manifest.</p>
+        <main class="content">
+          <div id="plugin-detail" class="plugin-detail">
+            <div class="empty-state">
+              <p>Select a plugin from the sidebar to view details and run it.</p>
             </div>
           </div>
-          <div class="card__body">
-            <form id="install-form" class="form grid-form">
-              <label class="field span-2">
-                <span>Package URL (zip)</span>
-                <input
-                  name="package_url"
-                  type="url"
-                  placeholder="file:///path/to/package or https://..."
-                  required
-                />
-              </label>
-              <div class="form__actions span-2">
-                <button class="btn btn--primary" type="submit">Install Plugin</button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        <section class="card" id="execution-section" style="--delay: 0.18s">
-          <div class="card__header">
-            <div>
-              <h2>Run Plugin</h2>
-              <p class="muted">Execute a plugin with JSON parameters.</p>
-            </div>
-          </div>
-          <div class="card__body">
-            <form id="execution-form" class="form grid-form">
-              <label class="field span-2">
-                <span>Plugin ID</span>
-                <input
-                  id="execution-plugin-id"
-                  name="plugin_id"
-                  type="text"
-                  placeholder="plugin id"
-                  required
-                />
-              </label>
-              <label class="field span-2">
-                <span>Params (JSON object)</span>
-                <textarea
-                  id="execution-params"
-                  name="params"
-                  rows="4"
-                  placeholder="{&quot;key&quot;:&quot;value&quot;}"
-                ></textarea>
-              </label>
-              <div class="form__actions span-2">
-                <button class="btn btn--primary" type="submit">Run Plugin</button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        <section class="card" id="executions-section" style="--delay: 0.24s">
-          <div class="card__header">
-            <div>
-              <h2>Executions</h2>
-              <p class="muted">Monitor recent runs and output.</p>
-            </div>
-            <div class="card__actions">
-              <span class="stat" id="execution-count">0 executions</span>
-              <button class="btn btn--ghost" type="button" id="refresh-executions">
-                Refresh
-              </button>
-            </div>
-          </div>
-          <div class="card__body">
-            <form id="execution-filter-form" class="inline-form">
-              <label class="field">
-                <span>Plugin Filter</span>
-                <input
-                  id="execution-filter-id"
-                  type="text"
-                  placeholder="plugin id (optional)"
-                />
-              </label>
-              <button class="btn btn--ghost" type="submit">Apply</button>
-              <button class="btn btn--ghost" type="button" id="execution-filter-clear">
-                Clear
-              </button>
-            </form>
-            <div class="list" id="execution-list"></div>
-          </div>
-        </section>
-      </main>
-
-      <footer class="footer">
-        <div>Atom Node dashboard for local workflows.</div>
-        <div id="last-updated">Last updated: --</div>
-      </footer>
-
-      <div class="toast" id="notice" role="status" aria-live="polite"></div>
+        </main>
+      </div>
     </div>
+
+    <div class="modal" id="connection-modal">
+      <div class="modal__backdrop"></div>
+      <div class="modal__content">
+        <div class="modal__header">
+          <h2>Connect to Service</h2>
+          <button class="btn btn--ghost" type="button" data-modal="close">×</button>
+        </div>
+        <form id="connect-form" class="form">
+          <label class="field">
+            <span>Base URL</span>
+            <input
+              id="base-url"
+              type="url"
+              placeholder="http://localhost:3000"
+              required
+            />
+          </label>
+          <div class="form__actions">
+            <button class="btn btn--secondary" type="button" data-modal="close">Cancel</button>
+            <button class="btn btn--primary" type="submit">Connect</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal" id="install-modal">
+      <div class="modal__backdrop"></div>
+      <div class="modal__content">
+        <div class="modal__header">
+          <h2>Install Plugin</h2>
+          <button class="btn btn--ghost" type="button" data-modal="close">×</button>
+        </div>
+        <form id="install-form" class="form">
+          <label class="field">
+            <span>Package URL (zip)</span>
+            <input
+              name="package_url"
+              type="url"
+              placeholder="file:///path/to/package or https://..."
+              required
+            />
+          </label>
+          <div class="form__actions">
+            <button class="btn btn--secondary" type="button" data-modal="close">Cancel</button>
+            <button class="btn btn--primary" type="submit">Install</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="notice" role="status" aria-live="polite"></div>
 
     <script type="module" src="./app.ts"></script>
   </body>
