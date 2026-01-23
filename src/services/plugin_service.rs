@@ -1,7 +1,5 @@
 use crate::error::{AppError, Result};
-use crate::models::{
-    Plugin, PluginParameter, PluginType, PythonDependencies, PythonDependenciesRequest,
-};
+use crate::models::{Plugin, PluginParameter, PluginType, PythonDependencies};
 use crate::repository::PluginRepository;
 use crate::paths;
 use chrono::Utc;
@@ -23,7 +21,6 @@ struct MetadataInstallPlugin {
     entry_point: String,
     metadata: Option<Value>,
     parameters: Option<Vec<PluginParameter>>,
-    python_dependencies: Option<PythonDependenciesRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,7 +64,6 @@ impl PluginService {
         entry_point: String,
         metadata: Option<String>,
         parameters: Option<Vec<PluginParameter>>,
-        python_dependencies: Option<PythonDependenciesRequest>,
     ) -> Result<Plugin> {
         // Check if plugin already exists
         if self.repo.get_by_name(&name).await.is_ok() {
@@ -87,8 +83,6 @@ impl PluginService {
         fs::create_dir_all(&plugin_dir)?;
 
         let parameters_json = Self::validate_parameters(parameters)?;
-        let python_dependencies =
-            Self::normalize_python_dependencies(plugin_type, python_dependencies)?;
 
         if let Err(err) = self.download_and_extract(&package_url, &plugin_dir).await {
             let _ = fs::remove_dir_all(&plugin_dir);
@@ -108,15 +102,7 @@ impl PluginService {
         let mut python_dependencies_json = None;
         if plugin_type == PluginType::Python {
             let venv_dir = Self::python_env_dir_for(&plugin_id)?;
-            let resolved_deps =
-                match Self::resolve_python_dependencies(&plugin_dir, python_dependencies) {
-                Ok(deps) => deps,
-                Err(err) => {
-                    let _ = fs::remove_dir_all(&plugin_dir);
-                    let _ = fs::remove_dir_all(&venv_dir);
-                    return Err(err);
-                }
-            };
+            let resolved_deps = Self::resolve_python_dependencies(&plugin_dir);
             python_dependencies_json = match resolved_deps.as_ref() {
                 Some(deps) => match Self::serialize_python_dependencies(deps) {
                     Ok(json) => Some(json),
@@ -200,7 +186,6 @@ impl PluginService {
                     spec.entry_point,
                     metadata,
                     spec.parameters,
-                    spec.python_dependencies,
                 )
                 .await?;
             plugins.push(plugin);
@@ -397,79 +382,24 @@ impl PluginService {
         Ok(base_dir.join(plugin_id))
     }
 
-    fn normalize_python_dependencies(
-        plugin_type: PluginType,
-        dependencies: Option<PythonDependenciesRequest>,
-    ) -> Result<Option<PythonDependencies>> {
-        if plugin_type != PluginType::Python {
-            if dependencies.is_some() {
-                return Err(crate::error::AppError::Execution(
-                    "Python dependencies are only supported for python plugins".to_string(),
-                ));
-            }
-            return Ok(None);
-        }
-
-        let Some(dependencies) = dependencies else {
-            return Ok(None);
-        };
-
-        match dependencies {
-            PythonDependenciesRequest::Inline(items) => {
-                Self::normalize_inline_dependencies(items)
-            }
-            PythonDependenciesRequest::Spec(spec) => match spec {
-                PythonDependencies::Inline { items } => {
-                    Self::normalize_inline_dependencies(items)
-                }
-                PythonDependencies::Requirements { path } => {
-                    Self::validate_dependency_path(&path, "Requirements")?;
-                    Ok(Some(PythonDependencies::Requirements { path }))
-                }
-                PythonDependencies::Pyproject { path } => {
-                    Self::validate_dependency_path(&path, "Pyproject")?;
-                    Ok(Some(PythonDependencies::Pyproject { path }))
-                }
-            },
-        }
-    }
-
     fn resolve_python_dependencies(
         plugin_dir: &Path,
-        dependencies: Option<PythonDependencies>,
-    ) -> Result<Option<PythonDependencies>> {
-        if let Some(dependencies) = dependencies {
-            match &dependencies {
-                PythonDependencies::Requirements { path }
-                | PythonDependencies::Pyproject { path } => {
-                    let dep_path = plugin_dir.join(path);
-                    if !dep_path.is_file() {
-                        return Err(crate::error::AppError::Execution(format!(
-                            "Dependency file not found: {}",
-                            dep_path.display()
-                        )));
-                    }
-                }
-                PythonDependencies::Inline { items: _ } => {}
-            }
-            return Ok(Some(dependencies));
+    ) -> Option<PythonDependencies> {
+        let pyproject = plugin_dir.join("pyproject.toml");
+        if pyproject.is_file() {
+            return Some(PythonDependencies::Pyproject {
+                path: "pyproject.toml".to_string(),
+            });
         }
 
         let requirements = plugin_dir.join("requirements.txt");
         if requirements.is_file() {
-            return Ok(Some(PythonDependencies::Requirements {
+            return Some(PythonDependencies::Requirements {
                 path: "requirements.txt".to_string(),
-            }));
+            });
         }
 
-        let pyproject = plugin_dir.join("pyproject.toml");
-        if pyproject.is_file() {
-            return Ok(Some(PythonDependencies::Pyproject {
-                path: "pyproject.toml".to_string(),
-            }));
-        }
-
-        Ok(None)
+        None
     }
 
     fn serialize_python_dependencies(deps: &PythonDependencies) -> Result<String> {
@@ -512,22 +442,18 @@ impl PluginService {
             "--python".to_string(),
             python_path_str,
         ];
-        let mut current_dir = None;
-        match dependencies {
-            PythonDependencies::Inline { items } => {
-                args.extend(items.iter().cloned());
-            }
+        let current_dir = match dependencies {
             PythonDependencies::Requirements { path } => {
                 args.push("-r".to_string());
                 args.push(path.clone());
-                current_dir = Some(plugin_dir);
+                Some(plugin_dir)
             }
             PythonDependencies::Pyproject { path: _ } => {
                 args.push("-e".to_string());
                 args.push(".".to_string());
-                current_dir = Some(plugin_dir);
+                Some(plugin_dir)
             }
-        }
+        };
 
         Self::run_uv_command(&args, current_dir).await?;
         Ok(())
@@ -620,55 +546,4 @@ impl PluginService {
         Ok(Some(json))
     }
 
-    fn normalize_inline_dependencies(
-        dependencies: Vec<String>,
-    ) -> Result<Option<PythonDependencies>> {
-        let mut seen = std::collections::HashSet::new();
-        let mut normalized = Vec::new();
-        for dep in dependencies {
-            let trimmed = dep.trim();
-            if trimmed.is_empty() {
-                return Err(crate::error::AppError::Execution(
-                    "Python dependency cannot be empty".to_string(),
-                ));
-            }
-            if seen.insert(trimmed.to_string()) {
-                normalized.push(trimmed.to_string());
-            }
-        }
-
-        if normalized.is_empty() {
-            return Ok(None);
-        }
-
-        Ok(Some(PythonDependencies::Inline { items: normalized }))
-    }
-
-    fn validate_dependency_path(path: &str, label: &str) -> Result<()> {
-        let trimmed = path.trim();
-        if trimmed.is_empty() {
-            return Err(crate::error::AppError::Execution(format!(
-                "{} path cannot be empty",
-                label
-            )));
-        }
-
-        let path = Path::new(trimmed);
-        if path.is_absolute() {
-            return Err(crate::error::AppError::Execution(format!(
-                "{} path must be a relative path",
-                label
-            )));
-        }
-        if path
-            .components()
-            .any(|component| matches!(component, std::path::Component::ParentDir))
-        {
-            return Err(crate::error::AppError::Execution(format!(
-                "{} path cannot contain '..'",
-                label
-            )));
-        }
-        Ok(())
-    }
 }

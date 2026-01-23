@@ -62,14 +62,6 @@ pub struct PluginParameter {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
 pub enum PythonDependencies {
-    Inline { items: Vec<String> },
     Requirements { path: String },
     Pyproject { path: String },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PythonDependenciesRequest {
-    Inline(Vec<String>),
-    Spec(PythonDependencies),
 }
