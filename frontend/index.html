@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Atom Node Plugin Hub</title>
+    <title>Atom Node 插件中心</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,18 +16,12 @@
     <div class="app">
       <header class="header">
         <div class="header__left">
-          <h1 class="header__title">Atom Node Plugin Hub</h1>
-          <button class="btn btn--secondary" type="button" id="btn-install-plugin">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-            Install Plugin
-          </button>
+          <h1 class="header__title">Atom Node 插件中心</h1>
         </div>
         <div class="header__right">
           <button class="status-pill" id="connection-status" type="button">
             <span class="status-dot" id="status-dot"></span>
-            <span id="status-text">Not Connected</span>
+            <span id="status-text">未连接</span>
           </button>
         </div>
       </header>
@@ -35,25 +29,25 @@
       <main class="main">
         <section class="hero">
           <div class="hero__copy">
-            <p class="hero__eyebrow">Plugin Library</p>
-            <h2 class="hero__title">Run plugins with a single click.</h2>
+            <p class="hero__eyebrow">插件库</p>
+            <h2 class="hero__title">一键运行插件。</h2>
             <p class="hero__subtitle">
-              Browse installed plugins, open a card, and launch workflows from the same place.
+              浏览已安装插件，打开卡片即可运行对应插件。
             </p>
           </div>
           <div class="hero__panel">
             <label class="search-field">
-              <span>Search plugins</span>
-              <input type="text" id="plugin-search" placeholder="Type a name, author, or tag..." />
+              <span>搜索插件</span>
+              <input type="text" id="plugin-search" placeholder="输入名称、作者或标签..." />
             </label>
             <div class="hero__stats">
               <div class="stat-card">
-                <span>Installed</span>
+                <span>已安装</span>
                 <strong id="plugin-count">0</strong>
               </div>
               <div class="stat-card">
-                <span>Status</span>
-                <strong id="connection-state">Offline</strong>
+                <span>状态</span>
+                <strong id="connection-state">离线</strong>
               </div>
             </div>
           </div>
@@ -67,12 +61,12 @@
       <div class="modal__backdrop"></div>
       <div class="modal__content">
         <div class="modal__header">
-          <h2>Connect to Service</h2>
+          <h2>连接到服务</h2>
           <button class="btn btn--ghost" type="button" data-modal="close">×</button>
         </div>
         <form id="connect-form" class="form">
           <label class="field">
-            <span>Base URL</span>
+            <span>服务地址</span>
             <input
               id="base-url"
               type="url"
@@ -81,33 +75,8 @@
             />
           </label>
           <div class="form__actions">
-            <button class="btn btn--secondary" type="button" data-modal="close">Cancel</button>
-            <button class="btn btn--primary" type="submit">Connect</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <div class="modal" id="install-modal">
-      <div class="modal__backdrop"></div>
-      <div class="modal__content">
-        <div class="modal__header">
-          <h2>Install Plugin</h2>
-          <button class="btn btn--ghost" type="button" data-modal="close">×</button>
-        </div>
-        <form id="install-form" class="form">
-          <label class="field">
-            <span>Package URL (zip)</span>
-            <input
-              name="package_url"
-              type="url"
-              placeholder="file:///path/to/package or https://..."
-              required
-            />
-          </label>
-          <div class="form__actions">
-            <button class="btn btn--secondary" type="button" data-modal="close">Cancel</button>
-            <button class="btn btn--primary" type="submit">Install</button>
+            <button class="btn btn--secondary" type="button" data-modal="close">取消</button>
+            <button class="btn btn--primary" type="submit">连接</button>
           </div>
         </form>
       </div>
@@ -118,8 +87,8 @@
       <div class="modal__content modal__content--wide">
         <div class="modal__header modal__header--stacked">
           <div>
-            <p class="modal__eyebrow">Plugin Runner</p>
-            <h2 id="plugin-modal-title">Plugin</h2>
+            <p class="modal__eyebrow">插件运行器</p>
+            <h2 id="plugin-modal-title">插件</h2>
             <div id="plugin-modal-meta" class="plugin-modal__meta"></div>
           </div>
           <button class="btn btn--ghost" type="button" data-modal="close">×</button>

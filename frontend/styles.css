@@ -228,8 +228,9 @@ p {
 
 .plugin-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 300px));
   gap: 18px;
+  justify-content: start;
 }
 
 .plugin-card {
@@ -595,16 +596,16 @@ p {
   margin-bottom: 12px;
 }
 
-.execution-card__id {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
 .execution-card__status {
   font-size: 0.85rem;
   padding: 4px 10px;
   border-radius: 999px;
   font-weight: 600;
+}
+
+.execution-card__meta-line {
+  font-size: 0.85rem;
+  color: var(--color-muted);
 }
 
 .execution-card__status--completed {
@@ -829,7 +830,8 @@ p {
   }
 
   .plugin-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 360px);
+    justify-content: center;
   }
 
   .toast {

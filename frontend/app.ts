@@ -41,10 +41,6 @@ type PluginParameter = {
   default?: unknown;
 };
 
-type InstallPluginRequest = {
-  package_url: string;
-};
-
 type ExecutePluginRequest = {
   params?: Record<string, unknown>;
 };
@@ -56,7 +52,6 @@ const dom = {
   statusDot: document.querySelector<HTMLElement>("#status-dot")!,
   statusText: document.querySelector<HTMLElement>("#status-text")!,
   connectionState: document.querySelector<HTMLElement>("#connection-state")!,
-  btnInstallPlugin: document.querySelector<HTMLButtonElement>("#btn-install-plugin")!,
   pluginSearch: document.querySelector<HTMLInputElement>("#plugin-search")!,
   pluginList: document.querySelector<HTMLElement>("#plugin-list")!,
   pluginCount: document.querySelector<HTMLElement>("#plugin-count")!,
@@ -64,10 +59,8 @@ const dom = {
   pluginModal: document.querySelector<HTMLElement>("#plugin-modal")!,
   pluginModalTitle: document.querySelector<HTMLElement>("#plugin-modal-title")!,
   pluginModalMeta: document.querySelector<HTMLElement>("#plugin-modal-meta")!,
-  installForm: document.querySelector<HTMLFormElement>("#install-form")!,
   notice: document.querySelector<HTMLElement>("#notice")!,
   connectionModal: document.querySelector<HTMLElement>("#connection-modal")!,
-  installModal: document.querySelector<HTMLElement>("#install-modal")!,
   modalCloseButtons: document.querySelectorAll<HTMLElement>('[data-modal="close"]'),
   modalBackdrops: document.querySelectorAll<HTMLElement>(".modal__backdrop"),
 };
@@ -93,12 +86,6 @@ const api = {
   },
   async listPlugins(): Promise<PluginsListResponse> {
     return request<PluginsListResponse>("/api/plugins");
-  },
-  async installPlugin(payload: InstallPluginRequest): Promise<Plugin> {
-    return request<Plugin>("/api/plugins", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
   },
   async enablePlugin(id: string): Promise<void> {
     await request<void>(`/api/plugins/${id}/enable`, { method: "PUT" });
@@ -180,12 +167,12 @@ function updateConnectionState(connected: boolean) {
   state.connected = connected;
   if (connected) {
     dom.connectionStatus.classList.add("connected");
-    dom.statusText.textContent = "Connected";
-    dom.connectionState.textContent = "Online";
+    dom.statusText.textContent = "已连接";
+    dom.connectionState.textContent = "在线";
   } else {
     dom.connectionStatus.classList.remove("connected");
-    dom.statusText.textContent = "Not Connected";
-    dom.connectionState.textContent = "Offline";
+    dom.statusText.textContent = "未连接";
+    dom.connectionState.textContent = "离线";
   }
 }
 
@@ -204,7 +191,7 @@ function closeModal(modal: HTMLElement) {
 async function connect() {
   const baseUrl = normalizeBaseUrl(dom.baseUrlInput.value.trim());
   if (!baseUrl) {
-    notify("Base URL is required.", "error");
+    notify("请输入服务地址。", "error");
     return;
   }
   state.baseUrl = baseUrl;
@@ -212,21 +199,21 @@ async function connect() {
 
   const submitBtn = dom.connectForm.querySelector('button[type="submit"]') as HTMLButtonElement;
   submitBtn.disabled = true;
-  submitBtn.textContent = "Connecting...";
+  submitBtn.textContent = "正在连接...";
 
   try {
     const health = await api.health();
     updateConnectionState(true);
     closeModal(dom.connectionModal);
     await Promise.all([loadPlugins()]);
-    notify("Connected to Atom Node service.", "success");
+    notify("已连接到 Atom Node 服务。", "success");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Connection failed.";
+    const message = error instanceof Error ? error.message : "连接失败。";
     updateConnectionState(false);
     notify(message, "error");
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = "Connect";
+    submitBtn.textContent = "连接";
   }
 }
 
@@ -236,7 +223,7 @@ async function loadPlugins() {
     state.plugins = response.data || [];
     renderPluginList();
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load plugins.";
+    const message = error instanceof Error ? error.message : "加载插件失败。";
     notify(message, "error");
   }
 }
@@ -249,7 +236,7 @@ async function loadExecutions() {
     state.executions = response.data || [];
     renderExecutions();
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load executions.";
+    const message = error instanceof Error ? error.message : "加载执行记录失败。";
     notify(message, "error");
   }
 }
@@ -281,7 +268,7 @@ function renderPluginList() {
   if (plugins.length === 0) {
     dom.pluginList.innerHTML = `
       <div class="empty-state empty-state--wide">
-        <p>${state.filterText ? "No plugins match your search." : "No plugins installed yet."}</p>
+        <p>${state.filterText ? "没有匹配的插件。" : "暂未安装插件。"}</p>
       </div>
     `;
     return;
@@ -300,7 +287,7 @@ function renderExecutions() {
   list.innerHTML = "";
 
   if (state.executions.length === 0) {
-    list.innerHTML = `<div class="empty-state"><p>No executions yet.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><p>暂无执行记录。</p></div>`;
     return;
   }
 
@@ -311,51 +298,48 @@ function renderExecutions() {
 
 function renderPluginDetail(plugin: Plugin) {
   const enabledBadge = plugin.enabled
-    ? `<span class="badge badge--success">Enabled</span>`
-    : `<span class="badge badge--muted">Disabled</span>`;
+    ? `<span class="badge badge--success">已启用</span>`
+    : `<span class="badge badge--muted">已停用</span>`;
 
   const toggleAction = plugin.enabled ? "disable" : "enable";
-  const toggleLabel = plugin.enabled ? "Disable" : "Enable";
+  const toggleLabel = plugin.enabled ? "禁用" : "启用";
 
   dom.pluginModalTitle.textContent = plugin.name;
   dom.pluginModalMeta.innerHTML = `
-    <span>Version: ${escapeHtml(plugin.version)}</span>
-    <span>Type: ${escapeHtml(plugin.plugin_type)}</span>
-    <span>Author: ${escapeHtml(plugin.author || "Unknown")}</span>
+    <span>版本: ${escapeHtml(plugin.version)}</span>
+    <span>作者: ${escapeHtml(plugin.author || "未知")}</span>
     ${enabledBadge}
   `;
 
   dom.pluginDetail.innerHTML = `
     <div class="plugin-detail__section">
-      <h3 class="plugin-detail__section-title">Overview</h3>
-      <p class="plugin-detail__description">${escapeHtml(plugin.description || "No description provided.")}</p>
+      <h3 class="plugin-detail__section-title">概览</h3>
+      <p class="plugin-detail__description">${escapeHtml(plugin.description || "暂无描述。")}</p>
       <div class="plugin-detail__meta">
-        <span>Entry: ${escapeHtml(plugin.entry_point)}</span>
-        <span>Updated: ${formatTimestamp(plugin.updated_at)}</span>
+        <span>更新于: ${formatTimestamp(plugin.updated_at)}</span>
       </div>
     </div>
 
     <div class="plugin-detail__section">
-      <h3 class="plugin-detail__section-title">Run Plugin</h3>
+      <h3 class="plugin-detail__section-title">运行插件</h3>
       <form id="execution-form" class="execution-form">
         <div id="execution-dynamic-fields"></div>
         <div class="form__actions">
-          <button class="btn btn--primary" type="submit" id="btn-execute">Run Plugin</button>
+          <button class="btn btn--primary" type="submit" id="btn-execute">运行插件</button>
         </div>
       </form>
     </div>
 
     <div class="plugin-detail__section" id="executions-section">
-      <h3 class="plugin-detail__section-title">Recent Executions</h3>
+      <h3 class="plugin-detail__section-title">最近执行</h3>
       <div class="executions-list"></div>
     </div>
 
     <div class="plugin-detail__section">
-      <h3 class="plugin-detail__section-title">Actions</h3>
+      <h3 class="plugin-detail__section-title">操作</h3>
       <div class="form__actions">
-        <button class="btn btn--secondary" type="button" data-action="update">Update Plugin</button>
         <button class="btn btn--secondary" type="button" data-action="${toggleAction}">${toggleLabel}</button>
-        <button class="btn btn--danger" type="button" data-action="uninstall">Uninstall</button>
+        <button class="btn btn--danger" type="button" data-action="uninstall">卸载</button>
       </div>
     </div>
   `;
@@ -368,7 +352,7 @@ function renderPluginDetail(plugin: Plugin) {
   const executeBtn = document.getElementById("btn-execute") as HTMLButtonElement;
   if (executeBtn && !plugin.enabled) {
     executeBtn.disabled = true;
-    executeBtn.title = "Plugin must be enabled to run";
+    executeBtn.title = "需先启用插件才能运行";
   }
 
   const actionButtons = dom.pluginDetail.querySelectorAll<HTMLButtonElement>('button[data-action]');
@@ -384,7 +368,7 @@ function renderExecutionForm(plugin: Plugin) {
   container.innerHTML = "";
 
   if (!plugin.parameters || plugin.parameters.length === 0) {
-    container.innerHTML = `<p class="muted">This plugin has no parameters.</p>`;
+    container.innerHTML = `<p class="muted">该插件没有参数。</p>`;
     return;
   }
 
@@ -410,7 +394,7 @@ function buildParameterField(param: PluginParameter): HTMLElement {
       const stringInput = document.createElement("input");
       stringInput.type = "text";
       stringInput.name = param.name;
-      stringInput.placeholder = `Enter ${param.name}`;
+      stringInput.placeholder = `输入 ${param.name}`;
       if (defaultVal) stringInput.value = defaultVal;
       label.appendChild(stringInput);
       break;
@@ -419,7 +403,7 @@ function buildParameterField(param: PluginParameter): HTMLElement {
       const numberInput = document.createElement("input");
       numberInput.type = "number";
       numberInput.name = param.name;
-      numberInput.placeholder = `Enter ${param.name}`;
+      numberInput.placeholder = `输入 ${param.name}`;
       numberInput.step = "any";
       if (defaultVal) numberInput.value = defaultVal;
       label.appendChild(numberInput);
@@ -429,7 +413,7 @@ function buildParameterField(param: PluginParameter): HTMLElement {
       const integerInput = document.createElement("input");
       integerInput.type = "number";
       integerInput.name = param.name;
-      integerInput.placeholder = `Enter ${param.name}`;
+      integerInput.placeholder = `输入 ${param.name}`;
       integerInput.step = "1";
       if (defaultVal) integerInput.value = defaultVal;
       label.appendChild(integerInput);
@@ -459,7 +443,7 @@ function buildParameterField(param: PluginParameter): HTMLElement {
     case "json":
       const jsonTextarea = document.createElement("textarea");
       jsonTextarea.name = param.name;
-      jsonTextarea.placeholder = `Enter JSON value for ${param.name}`;
+      jsonTextarea.placeholder = `输入 ${param.name} 的 JSON 值`;
       jsonTextarea.rows = 4;
       if (defaultVal) jsonTextarea.value = defaultVal;
       label.appendChild(jsonTextarea);
@@ -475,22 +459,21 @@ function buildPluginCard(plugin: Plugin) {
   card.dataset.pluginId = plugin.id;
 
   const enabledBadge = plugin.enabled
-    ? `<span class="badge badge--success">Enabled</span>`
-    : `<span class="badge badge--muted">Disabled</span>`;
+    ? `<span class="badge badge--success">已启用</span>`
+    : `<span class="badge badge--muted">已停用</span>`;
 
   card.innerHTML = `
     <div class="plugin-card__header">
       <div>
-        <div class="plugin-card__eyebrow">${escapeHtml(plugin.plugin_type)}</div>
         <h3 class="plugin-card__title">${escapeHtml(plugin.name)}</h3>
-        <div class="plugin-card__meta">v${escapeHtml(plugin.version)} • ${escapeHtml(plugin.author || "Unknown")}</div>
+        <div class="plugin-card__meta">v${escapeHtml(plugin.version)} • ${escapeHtml(plugin.author || "未知")}</div>
       </div>
       ${enabledBadge}
     </div>
-    <p class="plugin-card__desc">${escapeHtml(plugin.description || "No description provided.")}</p>
+    <p class="plugin-card__desc">${escapeHtml(plugin.description || "暂无描述。")}</p>
     <div class="plugin-card__footer">
-      <span>Updated ${formatTimestamp(plugin.updated_at)}</span>
-      <button class="btn btn--primary btn--small" type="button" data-action="open">Run</button>
+      <span>更新于 ${formatTimestamp(plugin.updated_at)}</span>
+      <button class="btn btn--primary btn--small" type="button" data-action="open">运行</button>
     </div>
   `;
 
@@ -517,28 +500,24 @@ function buildExecutionCard(execution: Execution) {
 
   card.innerHTML = `
     <div class="execution-card__header">
-      <div>
-        <div class="execution-card__id">${escapeHtml(shortId(execution.id))}</div>
-        <div class="plugin-card__meta">${formatTimestamp(execution.started_at)}</div>
-      </div>
+      <div class="execution-card__meta-line">开始时间：${formatDateTime(execution.started_at)}</div>
       <span class="execution-card__status ${statusClass}">${escapeHtml(execution.status)}</span>
     </div>
     <div class="execution-card__meta">
-      <div><span>PID</span><strong>${execution.pid ?? "--"}</strong></div>
-      <div><span>Exit</span><strong>${execution.exit_code ?? "--"}</strong></div>
-      <div><span>Duration</span><strong>${calculateDuration(execution.started_at, execution.finished_at)}</strong></div>
+      <div><span>用时</span><strong>${calculateDuration(execution.started_at, execution.finished_at)}</strong></div>
+      <div><span>结束时间</span><strong>${execution.finished_at ? formatDateTime(execution.finished_at) : "--"}</strong></div>
     </div>
     ${execution.error_message ? `<p style="color: #9a2a1d; font-size: 0.85rem; margin-top: 8px;">${escapeHtml(execution.error_message)}</p>` : ""}
     <div class="execution-card__output">
-      <summary>Output</summary>
-      <pre>${escapeHtml(execution.stdout || "No output.")}</pre>
+      <summary>输出</summary>
+      <pre>${escapeHtml(execution.stdout || "无输出。")}</pre>
     </div>
   `;
 
   if (showStop) {
     const stopBtn = document.createElement("button");
     stopBtn.className = "btn btn--danger";
-    stopBtn.textContent = "Stop";
+    stopBtn.textContent = "停止";
     stopBtn.style.marginTop = "12px";
     stopBtn.addEventListener("click", () => stopExecution(execution.id));
     card.appendChild(stopBtn);
@@ -561,12 +540,12 @@ function selectPlugin(pluginId: string) {
 async function handleExecution(event: SubmitEvent) {
   event.preventDefault();
   if (!state.selectedPlugin) {
-    notify("No plugin selected.", "error");
+    notify("未选择插件。", "error");
     return;
   }
 
   if (!state.selectedPlugin.enabled) {
-    notify("Plugin must be enabled to run.", "error");
+    notify("需先启用插件才能运行。", "error");
     return;
   }
 
@@ -613,27 +592,27 @@ async function handleExecution(event: SubmitEvent) {
   const executeBtn = document.getElementById("btn-execute") as HTMLButtonElement;
   if (executeBtn) {
     executeBtn.disabled = true;
-    executeBtn.textContent = "Running...";
+    executeBtn.textContent = "正在运行...";
   }
 
   try {
     await api.executePlugin(state.selectedPlugin.id, payload);
     await loadExecutions();
-    notify("Plugin execution started.", "success");
+    notify("插件已开始执行。", "success");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to execute plugin.";
+    const message = error instanceof Error ? error.message : "执行插件失败。";
     notify(message, "error");
   } finally {
     if (executeBtn) {
       executeBtn.disabled = false;
-      executeBtn.textContent = "Run Plugin";
+      executeBtn.textContent = "运行插件";
     }
   }
 }
 
 async function handlePluginAction(action: string, pluginId: string) {
   if (action === "update") {
-    const confirmed = window.confirm("Update this plugin?");
+    const confirmed = window.confirm("是否更新该插件？");
     if (!confirmed) return;
 
     try {
@@ -644,16 +623,16 @@ async function handlePluginAction(action: string, pluginId: string) {
       if (updatedPlugin) {
         renderPluginDetail(updatedPlugin);
       }
-      notify("Plugin updated successfully.", "success");
+      notify("插件更新成功。", "success");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Failed to update plugin.";
+      const detail = error instanceof Error ? error.message : "更新插件失败。";
       notify(detail, "error");
     }
     return;
   }
 
   if (action === "enable" || action === "disable") {
-    const message = action === "enable" ? "Plugin enabled." : "Plugin disabled.";
+    const message = action === "enable" ? "插件已启用。" : "插件已停用。";
     try {
       if (action === "enable") {
         await api.enablePlugin(pluginId);
@@ -668,14 +647,14 @@ async function handlePluginAction(action: string, pluginId: string) {
       }
       notify(message, "success");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Plugin update failed.";
+      const detail = error instanceof Error ? error.message : "插件更新失败。";
       notify(detail, "error");
     }
     return;
   }
 
   if (action === "uninstall") {
-    const confirmed = window.confirm("Uninstall this plugin?");
+    const confirmed = window.confirm("是否卸载该插件？");
     if (!confirmed) return;
 
     try {
@@ -683,9 +662,9 @@ async function handlePluginAction(action: string, pluginId: string) {
       state.selectedPlugin = null;
       await loadPlugins();
       closeModal(dom.pluginModal);
-      notify("Plugin uninstalled.", "success");
+      notify("插件已卸载。", "success");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Failed to uninstall plugin.";
+      const detail = error instanceof Error ? error.message : "卸载插件失败。";
       notify(detail, "error");
     }
   }
@@ -695,9 +674,9 @@ async function stopExecution(executionId: string) {
   try {
     await api.stopExecution(executionId);
     await loadExecutions();
-    notify("Execution stopped.", "success");
+    notify("执行已停止。", "success");
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Failed to stop execution.";
+    const detail = error instanceof Error ? error.message : "停止执行失败。";
     notify(detail, "error");
   }
 }
@@ -720,26 +699,39 @@ function formatTimestamp(value: string) {
   return date.toLocaleDateString();
 }
 
-function shortId(id: string) {
-  return id.length > 8 ? `${id.slice(0, 8)}...` : id;
+function formatDateTime(value: string) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function calculateDuration(startedAt: string, finishedAt: string | null): string {
   const start = new Date(startedAt).getTime();
   const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
-  const durationMs = end - start;
-
-  const seconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(seconds / 60);
+  const durationMs = Math.max(0, end - start);
+  const totalSeconds = durationMs / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
   const hours = Math.floor(minutes / 60);
+  const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `${hours}h ${minutes % 60}m`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`;
-  } else {
-    return `${seconds}s`;
+    return `${hours}小时 ${minutes % 60}分 ${seconds.toFixed(1)}秒`;
   }
+  if (minutes > 0) {
+    return `${minutes}分 ${seconds.toFixed(1)}秒`;
+  }
+  if (totalSeconds >= 1) {
+    return `${totalSeconds.toFixed(1)}秒`;
+  }
+  return `${Math.round(durationMs)}毫秒`;
 }
 
 dom.connectionStatus.addEventListener("click", () => {
@@ -747,36 +739,9 @@ dom.connectionStatus.addEventListener("click", () => {
   openModal(dom.connectionModal);
 });
 
-dom.btnInstallPlugin.addEventListener("click", () => {
-  if (!state.connected) {
-    notify("Please connect to service first.", "error");
-    return;
-  }
-  openModal(dom.installModal);
-});
-
 dom.connectForm.addEventListener("submit", (event) => {
   event.preventDefault();
   connect();
-});
-
-dom.installForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const data = new FormData(dom.installForm);
-  const payload: InstallPluginRequest = {
-    package_url: String(data.get("package_url") || ""),
-  };
-
-  try {
-    await api.installPlugin(payload);
-    dom.installForm.reset();
-    closeModal(dom.installModal);
-    await loadPlugins();
-    notify("Plugin installed.", "success");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to install plugin.";
-    notify(message, "error");
-  }
 });
 
 dom.pluginSearch.addEventListener("input", (event) => {
