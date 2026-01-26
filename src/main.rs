@@ -1,3 +1,5 @@
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 mod api;
 mod config;
 mod error;
@@ -6,17 +8,22 @@ mod models;
 mod paths;
 mod repository;
 mod services;
+#[cfg(target_os = "windows")]
+mod windows_tray;
 
 use crate::config::Config;
 use crate::repository::{ExecutionRepository, PluginRepository, establish_connection};
 use crate::services::{ExecutionService, PluginService, UpdateService};
 use api::create_router;
+use std::future::Future;
 use std::net::SocketAddr;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn run_server<F>(shutdown: F) -> anyhow::Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
     // Initialize tracing
     tracing_subscriber::registry()
         .with(
@@ -63,7 +70,40 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await?;
 
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    run_server(std::future::pending::<()>()).await
+}
+
+#[cfg(target_os = "windows")]
+fn main() -> anyhow::Result<()> {
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    let server_handle = runtime.spawn(run_server(async move {
+        let _ = shutdown_rx.await;
+    }));
+
+    let _tray_thread = std::thread::spawn(move || {
+        if let Err(err) = windows_tray::run_tray_loop(shutdown_tx) {
+            eprintln!("tray loop failed: {err}");
+        }
+    });
+
+    match runtime.block_on(async { server_handle.await }) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(err)) => Err(err),
+        Err(err) => Err(anyhow::anyhow!(err)),
+    }
 }

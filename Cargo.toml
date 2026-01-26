@@ -1,7 +1,12 @@
 [package]
 name = "atom_node"
-version = "0.1.22"
+version = "0.1.3"
 edition = "2024"
+
+[[bin]]
+name = "atom_node"
+path = "src/main.rs"
+windows_subsystem = "windows"
 
 [dependencies]
 # Web framework
@@ -30,3 +35,7 @@ semver = "1.0"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.21.3"
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

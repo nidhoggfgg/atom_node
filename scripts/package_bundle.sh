@@ -192,14 +192,10 @@ extract_targz() {
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   if [[ -n "$CARGO_TARGET" && "$OS" == "windows" ]]; then
-    if ! command -v zig >/dev/null 2>&1; then
-      echo "zig is required to build Windows targets. Install zig and retry." >&2
-      exit 1
-    fi
-    if command -v cargo-zigbuild >/dev/null 2>&1; then
-      cargo zigbuild --release --target "$CARGO_TARGET"
+    if command -v cargo-xwin >/dev/null 2>&1; then
+      cargo xwin build --release --target "$CARGO_TARGET"
     else
-      echo "cargo-zigbuild not found. Install with: cargo install cargo-zigbuild" >&2
+      echo "cargo-xwin not found. Install with: cargo install cargo-xwin" >&2
       exit 1
     fi
   elif [[ -n "$CARGO_TARGET" ]]; then
