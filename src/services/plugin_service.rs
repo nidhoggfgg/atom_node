@@ -68,7 +68,7 @@ impl PluginService {
                 AppError::Execution(format!("Failed to create temp dir: {}", e))
             })?;
 
-        Self::extract_zip(&bytes, temp_dir.path())?;
+        Self::extract_zip(&bytes, temp_dir.path(), None)?;
         let (spec, metadata_dir) = Self::read_metadata_from_dir(temp_dir.path())?;
         let PackageMetadata {
             plugin_id,
@@ -169,10 +169,17 @@ impl PluginService {
 
         fs::create_dir_all(&plugin_dir)?;
 
-        if let Err(err) = Self::extract_zip(&bytes, &plugin_dir) {
+        let strip_prefix = metadata_dir.as_deref();
+        if let Err(err) = Self::extract_zip(&bytes, &plugin_dir, strip_prefix) {
             let _ = fs::remove_dir_all(&plugin_dir);
             return Err(err);
         }
+
+        let metadata_dir = if strip_prefix.is_some() {
+            None
+        } else {
+            metadata_dir
+        };
 
         let entry_point = match Self::resolve_entry_point(
             &entry_point,
@@ -250,7 +257,11 @@ impl PluginService {
         Ok(base_dir.join(plugin_id))
     }
 
-    fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<()> {
+    fn extract_zip(
+        bytes: &[u8],
+        target_dir: &Path,
+        strip_prefix: Option<&Path>,
+    ) -> Result<()> {
         let reader = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
             crate::error::AppError::Execution(format!("Invalid zip archive: {}", e))
@@ -265,6 +276,29 @@ impl PluginService {
                 return Err(crate::error::AppError::Execution(
                     "Invalid file path in archive".to_string(),
                 ));
+            };
+
+            let relative_path = if let Some(prefix) = strip_prefix {
+                match relative_path.strip_prefix(prefix) {
+                    Ok(stripped) => {
+                        if stripped.as_os_str().is_empty() {
+                            if file.name().ends_with('/') {
+                                continue;
+                            }
+                            return Err(crate::error::AppError::Execution(
+                                "Invalid file path in archive".to_string(),
+                            ));
+                        }
+                        stripped.to_path_buf()
+                    }
+                    Err(_) => {
+                        return Err(crate::error::AppError::Execution(
+                            "Archive contains files outside metadata directory".to_string(),
+                        ))
+                    }
+                }
+            } else {
+                relative_path
             };
 
             let out_path = target_dir.join(relative_path);
