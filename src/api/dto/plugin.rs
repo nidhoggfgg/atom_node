@@ -7,6 +7,11 @@ pub struct InstallPluginRequest {
     pub package_url: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdatePluginRequest {
+    pub package_url: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct PluginResponse {
     pub id: String,

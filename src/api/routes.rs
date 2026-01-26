@@ -26,6 +26,7 @@ pub fn create_router(plugin_service: PluginService, execution_service: Execution
         .route("/api/plugins", post(plugin::install_plugin))
         .route("/api/plugins/{id}", get(plugin::get_plugin))
         .route("/api/plugins/{id}", delete(plugin::uninstall_plugin))
+        .route("/api/plugins/{id}", put(plugin::update_plugin))
         .route("/api/plugins/{id}/enable", put(plugin::enable_plugin))
         .route("/api/plugins/{id}/disable", put(plugin::disable_plugin))
         // Execution

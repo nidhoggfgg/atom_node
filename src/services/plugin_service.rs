@@ -3,6 +3,7 @@ use crate::models::{Plugin, PluginParameter, PluginType, PythonDependencies};
 use crate::repository::PluginRepository;
 use crate::paths;
 use chrono::Utc;
+use semver::Version;
 use serde::Deserialize;
 use std::ffi::OsStr;
 use std::fs;
@@ -54,6 +55,87 @@ impl PluginService {
 
     pub async fn install_plugin(&self, package_url: String) -> Result<Plugin> {
         let bytes = Self::fetch_bytes(&package_url, "package").await?;
+        self.install_plugin_from_bytes(bytes).await
+    }
+
+    pub async fn update_plugin(&self, id: &str, package_url: String) -> Result<Plugin> {
+        let existing = self.repo.get(id).await?;
+        let bytes = Self::fetch_bytes(&package_url, "package").await?;
+        let temp_dir = tempfile::Builder::new()
+            .prefix("plugin_update_")
+            .tempdir()
+            .map_err(|e| {
+                AppError::Execution(format!("Failed to create temp dir: {}", e))
+            })?;
+
+        Self::extract_zip(&bytes, temp_dir.path())?;
+        let (spec, metadata_dir) = Self::read_metadata_from_dir(temp_dir.path())?;
+        let PackageMetadata {
+            plugin_id,
+            name,
+            version,
+            plugin_type,
+            description: _,
+            author: _,
+            entry_point,
+            parameters,
+        } = spec;
+
+        let plugin_id = Self::normalize_plugin_id(plugin_id, &name)?;
+        if plugin_id != id {
+            return Err(AppError::Execution(format!(
+                "Plugin id '{}' does not match update target '{}'",
+                plugin_id, id
+            )));
+        }
+        if entry_point.trim().is_empty() {
+            return Err(AppError::Execution(
+                "Entry point cannot be empty".to_string(),
+            ));
+        }
+        let _ = Self::parse_plugin_type(&plugin_type)?;
+        let _ = Self::validate_parameters(parameters)?;
+        let _ = Self::resolve_entry_point(
+            &entry_point,
+            temp_dir.path(),
+            metadata_dir.as_deref(),
+        )?;
+        Self::ensure_newer_version(&version, &existing.version)?;
+
+        self.uninstall_plugin(id).await?;
+        self.install_plugin_from_bytes(bytes).await
+    }
+
+    pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
+        let plugin = self.repo.get(id).await?;
+        if !plugin.plugin_path.is_empty() {
+            match fs::remove_dir_all(&plugin.plugin_path) {
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
+        if let Some(venv_path) = &plugin.python_venv_path {
+            if !venv_path.is_empty() {
+                match fs::remove_dir_all(venv_path) {
+                    Ok(_) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err.into()),
+                }
+            }
+        }
+        self.repo.delete(id).await
+    }
+
+    pub async fn enable_plugin(&self, id: &str) -> Result<()> {
+        self.repo.update_enabled(id, true).await
+    }
+
+    pub async fn disable_plugin(&self, id: &str) -> Result<()> {
+        self.repo.update_enabled(id, false).await
+    }
+
+    async fn install_plugin_from_bytes(&self, bytes: Vec<u8>) -> Result<Plugin> {
         let (spec, metadata_dir) = Self::read_metadata_from_zip(&bytes)?;
         let PackageMetadata {
             plugin_id,
@@ -66,23 +148,10 @@ impl PluginService {
             parameters,
         } = spec;
 
-        let plugin_id_raw = plugin_id.unwrap_or_else(|| name.clone());
-        let plugin_id = plugin_id_raw.trim();
-        if plugin_id.is_empty() {
-            return Err(crate::error::AppError::Execution(
-                "Plugin id cannot be empty".to_string(),
-            ));
-        }
-        if plugin_id != plugin_id_raw {
-            return Err(crate::error::AppError::Execution(format!(
-                "Plugin id has leading/trailing whitespace: {}",
-                plugin_id_raw
-            )));
-        }
-        Self::validate_plugin_id(plugin_id)?;
-        if self.repo.get(plugin_id).await.is_ok() {
+        let plugin_id = Self::normalize_plugin_id(plugin_id, &name)?;
+        if self.repo.get(&plugin_id).await.is_ok() {
             return Err(crate::error::AppError::PluginAlreadyExists(
-                plugin_id.to_string(),
+                plugin_id.clone(),
             ));
         }
 
@@ -94,10 +163,7 @@ impl PluginService {
 
         let plugin_type = Self::parse_plugin_type(&plugin_type)?;
         let parameters_json = Self::validate_parameters(parameters)?;
-        let mut entry_point = entry_point;
-        Self::validate_entry_point(&entry_point)?;
 
-        let plugin_id = plugin_id.to_string();
         let internal_id = Uuid::new_v4().to_string();
         let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
 
@@ -108,30 +174,17 @@ impl PluginService {
             return Err(err);
         }
 
-        let entry_path = plugin_dir.join(&entry_point);
-        if !entry_path.is_file() {
-            if let Some(dir) = metadata_dir.as_deref() {
-                let candidate = dir.join(&entry_point);
-                let candidate_str = candidate.to_string_lossy().to_string();
-                Self::validate_entry_point(&candidate_str)?;
-                let candidate_path = plugin_dir.join(&candidate_str);
-                if candidate_path.is_file() {
-                    entry_point = candidate_str;
-                } else {
-                    let _ = fs::remove_dir_all(&plugin_dir);
-                    return Err(crate::error::AppError::Execution(format!(
-                        "Entry point not found: {}",
-                        entry_path.display()
-                    )));
-                }
-            } else {
+        let entry_point = match Self::resolve_entry_point(
+            &entry_point,
+            &plugin_dir,
+            metadata_dir.as_deref(),
+        ) {
+            Ok(entry_point) => entry_point,
+            Err(err) => {
                 let _ = fs::remove_dir_all(&plugin_dir);
-                return Err(crate::error::AppError::Execution(format!(
-                    "Entry point not found: {}",
-                    entry_path.display()
-                )));
+                return Err(err);
             }
-        }
+        };
 
         let mut python_venv_path = None;
         let mut python_dependencies_json = None;
@@ -190,35 +243,6 @@ impl PluginService {
             return Err(err);
         }
         Ok(plugin)
-    }
-
-    pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
-        let plugin = self.repo.get(id).await?;
-        if !plugin.plugin_path.is_empty() {
-            match fs::remove_dir_all(&plugin.plugin_path) {
-                Ok(_) => {}
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => return Err(err.into()),
-            }
-        }
-        if let Some(venv_path) = &plugin.python_venv_path {
-            if !venv_path.is_empty() {
-                match fs::remove_dir_all(venv_path) {
-                    Ok(_) => {}
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => return Err(err.into()),
-                }
-            }
-        }
-        self.repo.delete(id).await
-    }
-
-    pub async fn enable_plugin(&self, id: &str) -> Result<()> {
-        self.repo.update_enabled(id, true).await
-    }
-
-    pub async fn disable_plugin(&self, id: &str) -> Result<()> {
-        self.repo.update_enabled(id, false).await
     }
 
     fn plugin_dir_for(plugin_id: &str) -> Result<PathBuf> {
@@ -329,6 +353,77 @@ impl PluginService {
         Ok((spec, metadata_dir))
     }
 
+    fn read_metadata_from_dir(
+        root: &Path,
+    ) -> Result<(PackageMetadata, Option<PathBuf>)> {
+        let mut matches = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+
+        while let Some(dir) = stack.pop() {
+            let entries = fs::read_dir(&dir).map_err(|e| {
+                AppError::Execution(format!(
+                    "Failed to read extracted package: {}",
+                    e
+                ))
+            })?;
+            for entry in entries {
+                let entry = entry.map_err(|e| {
+                    AppError::Execution(format!(
+                        "Failed to read extracted package: {}",
+                        e
+                    ))
+                })?;
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.file_name() == Some(OsStr::new("metadata.json")) {
+                    matches.push(path);
+                }
+            }
+        }
+
+        if matches.is_empty() {
+            return Err(AppError::Execution(
+                "metadata.json not found in package".to_string(),
+            ));
+        }
+        if matches.len() > 1 {
+            return Err(AppError::Execution(
+                "Multiple metadata.json files found in package".to_string(),
+            ));
+        }
+
+        let metadata_path = matches.remove(0);
+        let buffer = fs::read(&metadata_path).map_err(|e| {
+            AppError::Execution(format!("Failed to read metadata.json: {}", e))
+        })?;
+        let payload: PackageMetadataPayload =
+            serde_json::from_slice(&buffer).map_err(|e| {
+                AppError::Execution(format!("Invalid metadata JSON: {}", e))
+            })?;
+        let spec = match payload {
+            PackageMetadataPayload::Single(spec) => spec,
+            PackageMetadataPayload::Multi { install_plugins } => {
+                if install_plugins.len() != 1 {
+                    return Err(AppError::Execution(
+                        "Package metadata must describe exactly one plugin".to_string(),
+                    ));
+                }
+                install_plugins.into_iter().next().unwrap()
+            }
+        };
+
+        let metadata_dir = metadata_path
+            .parent()
+            .and_then(|parent| parent.strip_prefix(root).ok())
+            .map(PathBuf::from)
+            .filter(|dir| !dir.as_os_str().is_empty());
+
+        Ok((spec, metadata_dir))
+    }
+
     async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>> {
         if let Some(path) = Self::resolve_local_path(url) {
             let bytes = fs::read(&path).map_err(|e| {
@@ -398,6 +493,81 @@ impl PluginService {
             return Err(crate::error::AppError::Execution(
                 "Entry point cannot contain '..'".to_string(),
             ));
+        }
+        Ok(())
+    }
+
+    fn resolve_entry_point(
+        entry_point: &str,
+        root_dir: &Path,
+        metadata_dir: Option<&Path>,
+    ) -> Result<String> {
+        Self::validate_entry_point(entry_point)?;
+        let entry_path = root_dir.join(entry_point);
+        if entry_path.is_file() {
+            return Ok(entry_point.to_string());
+        }
+        if let Some(dir) = metadata_dir {
+            let candidate = dir.join(entry_point);
+            let candidate_str = candidate.to_string_lossy().to_string();
+            Self::validate_entry_point(&candidate_str)?;
+            let candidate_path = root_dir.join(&candidate_str);
+            if candidate_path.is_file() {
+                return Ok(candidate_str);
+            }
+        }
+        Err(AppError::Execution(format!(
+            "Entry point not found: {}",
+            entry_path.display()
+        )))
+    }
+
+    fn normalize_plugin_id(
+        plugin_id: Option<String>,
+        name: &str,
+    ) -> Result<String> {
+        let plugin_id_raw = plugin_id.unwrap_or_else(|| name.to_string());
+        let plugin_id = plugin_id_raw.trim();
+        if plugin_id.is_empty() {
+            return Err(AppError::Execution(
+                "Plugin id cannot be empty".to_string(),
+            ));
+        }
+        if plugin_id != plugin_id_raw {
+            return Err(AppError::Execution(format!(
+                "Plugin id has leading/trailing whitespace: {}",
+                plugin_id_raw
+            )));
+        }
+        Self::validate_plugin_id(plugin_id)?;
+        Ok(plugin_id.to_string())
+    }
+
+    fn ensure_newer_version(candidate: &str, current: &str) -> Result<()> {
+        let candidate = candidate.trim();
+        if candidate.is_empty() {
+            return Err(AppError::Execution(
+                "Plugin version cannot be empty".to_string(),
+            ));
+        }
+        let current = current.trim();
+        let candidate = Version::parse(candidate).map_err(|e| {
+            AppError::Execution(format!(
+                "Invalid plugin version '{}': {}",
+                candidate, e
+            ))
+        })?;
+        let current = Version::parse(current).map_err(|e| {
+            AppError::Execution(format!(
+                "Invalid installed plugin version '{}': {}",
+                current, e
+            ))
+        })?;
+        if candidate <= current {
+            return Err(AppError::Execution(format!(
+                "Plugin version {} is not newer than installed version {}",
+                candidate, current
+            )));
         }
         Ok(())
     }
@@ -528,19 +698,18 @@ impl PluginService {
             "--python".to_string(),
             python_path_str,
         ];
-        let mut current_dir: Option<PathBuf> = None;
-        match dependencies {
+        let current_dir = match dependencies {
             PythonDependencies::Requirements { path } => {
                 args.push("-r".to_string());
                 args.push(path.clone());
-                current_dir = Some(plugin_dir.to_path_buf());
+                Some(plugin_dir.to_path_buf())
             }
             PythonDependencies::Pyproject { path } => {
                 args.push("-e".to_string());
                 args.push(".".to_string());
                 let project_root = plugin_dir.join(path);
                 let project_root = project_root.parent().unwrap_or(plugin_dir);
-                current_dir = Some(project_root.to_path_buf());
+                Some(project_root.to_path_buf())
             }
         };
 

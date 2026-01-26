@@ -1,5 +1,5 @@
 use crate::api::dto::plugin::{
-    InstallPluginRequest, PluginResponse, PluginsListResponse,
+    InstallPluginRequest, PluginResponse, PluginsListResponse, UpdatePluginRequest,
 };
 use crate::api::routes::AppState;
 use crate::error::Result;
@@ -45,6 +45,18 @@ pub async fn uninstall_plugin(
 ) -> Result<StatusCode> {
     state.plugin_service.uninstall_plugin(&id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn update_plugin(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdatePluginRequest>,
+) -> Result<(StatusCode, Json<PluginResponse>)> {
+    let plugin = state
+        .plugin_service
+        .update_plugin(&id, req.package_url)
+        .await?;
+    Ok((StatusCode::OK, Json(PluginResponse::try_from(plugin)?)))
 }
 
 pub async fn enable_plugin(
