@@ -39,8 +39,7 @@ impl UpdateService {
         let pending_path = pending_update_path(&install_root);
         if pending_path.exists() {
             return Err(AppError::Execution(
-                "An update is already pending. Restart to apply it first."
-                    .to_string(),
+                "An update is already pending. Restart to apply it first.".to_string(),
             ));
         }
 
@@ -50,10 +49,7 @@ impl UpdateService {
             .prefix("update_extract_")
             .tempdir_in(&install_root)
             .map_err(|e| {
-                AppError::Execution(format!(
-                    "Failed to create update extract dir: {}",
-                    e
-                ))
+                AppError::Execution(format!("Failed to create update extract dir: {}", e))
             })?;
 
         extract_zip(&bytes, extract_dir.path())?;
@@ -62,8 +58,7 @@ impl UpdateService {
         validate_update_root(&update_root, &package_version)?;
 
         let extract_path = extract_dir.keep();
-        let staging_dir =
-            stage_update_root(&install_root, extract_path, update_root)?;
+        let staging_dir = stage_update_root(&install_root, extract_path, update_root)?;
 
         let pending = PendingUpdate {
             staged_path: staging_dir.to_string_lossy().to_string(),
@@ -102,9 +97,8 @@ impl UpdateService {
                 e
             ))
         })?;
-        let pending: PendingUpdate = serde_json::from_str(&content).map_err(|e| {
-            AppError::Execution(format!("Invalid update metadata: {}", e))
-        })?;
+        let pending: PendingUpdate = serde_json::from_str(&content)
+            .map_err(|e| AppError::Execution(format!("Invalid update metadata: {}", e)))?;
 
         let staged_path = PathBuf::from(&pending.staged_path);
         if !staged_path.is_dir() {
@@ -245,9 +239,7 @@ fn validate_update_root(update_root: &Path, package_version: &str) -> Result<()>
         .ok()
         .and_then(|path| path.file_name().map(|name| name.to_owned()))
         .ok_or_else(|| {
-            AppError::Execution(
-                "Failed to resolve current executable name".to_string(),
-            )
+            AppError::Execution("Failed to resolve current executable name".to_string())
         })?;
 
     let bin_path = update_root.join("bin").join(exe_name);
@@ -313,14 +305,13 @@ fn current_version_string() -> String {
 
 fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<()> {
     let reader = io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
-        AppError::Execution(format!("Invalid update archive: {}", e))
-    })?;
+    let mut archive = zip::ZipArchive::new(reader)
+        .map_err(|e| AppError::Execution(format!("Invalid update archive: {}", e)))?;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| {
-            AppError::Execution(format!("Failed to read update archive: {}", e))
-        })?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| AppError::Execution(format!("Failed to read update archive: {}", e)))?;
 
         let Some(relative_path) = file.enclosed_name().as_deref().map(Path::to_path_buf) else {
             return Err(AppError::Execution(
@@ -444,15 +435,16 @@ async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>> {
         return Ok(bytes);
     }
 
-    let response = reqwest::get(url).await.map_err(|e| {
-        AppError::Execution(format!("Failed to download {}: {}", label, e))
-    })?;
-    let response = response.error_for_status().map_err(|e| {
-        AppError::Execution(format!("Failed to download {}: {}", label, e))
-    })?;
-    let bytes = response.bytes().await.map_err(|e| {
-        AppError::Execution(format!("Failed to read {} bytes: {}", label, e))
-    })?;
+    let response = reqwest::get(url)
+        .await
+        .map_err(|e| AppError::Execution(format!("Failed to download {}: {}", label, e)))?;
+    let response = response
+        .error_for_status()
+        .map_err(|e| AppError::Execution(format!("Failed to download {}: {}", label, e)))?;
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| AppError::Execution(format!("Failed to read {} bytes: {}", label, e)))?;
 
     Ok(bytes.to_vec())
 }

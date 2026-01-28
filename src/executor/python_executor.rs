@@ -12,9 +12,7 @@ pub struct PythonExecutor {
 impl PythonExecutor {
     pub fn new(python_path: Option<String>) -> Self {
         Self {
-            python_path: python_path.unwrap_or_else(|| {
-                "python3".to_string()
-            }),
+            python_path: python_path.unwrap_or_else(|| "python3".to_string()),
         }
     }
 }

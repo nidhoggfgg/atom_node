@@ -32,7 +32,12 @@ pub fn create_router(plugin_service: PluginService, execution_service: Execution
         .route("/api/plugins/{id}/enable", put(plugin::enable_plugin))
         .route("/api/plugins/{id}/disable", put(plugin::disable_plugin))
         // Execution
+        .route("/api/plugins/{id}/prepare", post(execution::prepare_plugin))
         .route("/api/plugins/{id}/execute", post(execution::execute_plugin))
+        .route(
+            "/api/executions/{id}/apply",
+            post(execution::apply_execution),
+        )
         .route("/api/executions", get(execution::list_executions))
         .route("/api/executions/{id}", get(execution::get_execution))
         .route("/api/executions/{id}/stop", put(execution::stop_execution))

@@ -1,7 +1,7 @@
 use crate::error::{AppError, Result};
 use crate::models::{Plugin, PluginParameter, PluginType, PythonDependencies};
-use crate::repository::PluginRepository;
 use crate::paths;
+use crate::repository::PluginRepository;
 use chrono::Utc;
 use semver::Version;
 use serde::Deserialize;
@@ -27,7 +27,9 @@ struct PackageMetadata {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum PackageMetadataPayload {
-    Multi { install_plugins: Vec<PackageMetadata> },
+    Multi {
+        install_plugins: Vec<PackageMetadata>,
+    },
     Single(PackageMetadata),
 }
 
@@ -66,9 +68,7 @@ impl PluginService {
         let temp_dir = tempfile::Builder::new()
             .prefix("plugin_update_")
             .tempdir()
-            .map_err(|e| {
-                AppError::Execution(format!("Failed to create temp dir: {}", e))
-            })?;
+            .map_err(|e| AppError::Execution(format!("Failed to create temp dir: {}", e)))?;
 
         Self::extract_zip(&bytes, temp_dir.path(), None)?;
         let (spec, metadata_dir) = Self::read_metadata_from_dir(temp_dir.path())?;
@@ -99,11 +99,7 @@ impl PluginService {
         let _ = Self::parse_plugin_type(&plugin_type)?;
         let _ = Self::validate_parameters(parameters)?;
         let _ = Self::normalize_min_atom_node_version(min_atom_node_version)?;
-        let _ = Self::resolve_entry_point(
-            &entry_point,
-            temp_dir.path(),
-            metadata_dir.as_deref(),
-        )?;
+        let _ = Self::resolve_entry_point(&entry_point, temp_dir.path(), metadata_dir.as_deref())?;
         Self::ensure_newer_version(&version, &existing.version)?;
 
         self.uninstall_plugin(id).await?;
@@ -168,8 +164,7 @@ impl PluginService {
 
         let plugin_type = Self::parse_plugin_type(&plugin_type)?;
         let parameters_json = Self::validate_parameters(parameters)?;
-        let min_atom_node_version =
-            Self::normalize_min_atom_node_version(min_atom_node_version)?;
+        let min_atom_node_version = Self::normalize_min_atom_node_version(min_atom_node_version)?;
 
         let internal_id = Uuid::new_v4().to_string();
         let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
@@ -188,17 +183,14 @@ impl PluginService {
             metadata_dir
         };
 
-        let entry_point = match Self::resolve_entry_point(
-            &entry_point,
-            &plugin_dir,
-            metadata_dir.as_deref(),
-        ) {
-            Ok(entry_point) => entry_point,
-            Err(err) => {
-                let _ = fs::remove_dir_all(&plugin_dir);
-                return Err(err);
-            }
-        };
+        let entry_point =
+            match Self::resolve_entry_point(&entry_point, &plugin_dir, metadata_dir.as_deref()) {
+                Ok(entry_point) => entry_point,
+                Err(err) => {
+                    let _ = fs::remove_dir_all(&plugin_dir);
+                    return Err(err);
+                }
+            };
 
         let mut python_venv_path = None;
         let mut python_dependencies_json = None;
@@ -270,11 +262,7 @@ impl PluginService {
         Ok(base_dir.join(plugin_id))
     }
 
-    fn extract_zip(
-        bytes: &[u8],
-        target_dir: &Path,
-        strip_prefix: Option<&Path>,
-    ) -> Result<()> {
+    fn extract_zip(bytes: &[u8], target_dir: &Path, strip_prefix: Option<&Path>) -> Result<()> {
         let reader = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
             crate::error::AppError::Execution(format!("Invalid zip archive: {}", e))
@@ -307,7 +295,7 @@ impl PluginService {
                     Err(_) => {
                         return Err(crate::error::AppError::Execution(
                             "Archive contains files outside metadata directory".to_string(),
-                        ))
+                        ));
                     }
                 }
             } else {
@@ -333,21 +321,18 @@ impl PluginService {
         Ok(())
     }
 
-    fn read_metadata_from_zip(
-        bytes: &[u8],
-    ) -> Result<(PackageMetadata, Option<PathBuf>)> {
+    fn read_metadata_from_zip(bytes: &[u8]) -> Result<(PackageMetadata, Option<PathBuf>)> {
         let reader = Cursor::new(bytes);
-        let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
-            AppError::Execution(format!("Invalid zip archive: {}", e))
-        })?;
+        let mut archive = zip::ZipArchive::new(reader)
+            .map_err(|e| AppError::Execution(format!("Invalid zip archive: {}", e)))?;
 
         let mut metadata_index = None;
         let mut metadata_path = None;
 
         for i in 0..archive.len() {
-            let file = archive.by_index(i).map_err(|e| {
-                AppError::Execution(format!("Failed to read archive: {}", e))
-            })?;
+            let file = archive
+                .by_index(i)
+                .map_err(|e| AppError::Execution(format!("Failed to read archive: {}", e)))?;
             let Some(path) = file.enclosed_name().as_deref().map(Path::to_path_buf) else {
                 return Err(AppError::Execution(
                     "Invalid file path in archive".to_string(),
@@ -370,16 +355,14 @@ impl PluginService {
             ));
         };
 
-        let mut file = archive.by_index(index).map_err(|e| {
-            AppError::Execution(format!("Failed to read metadata.json: {}", e))
-        })?;
+        let mut file = archive
+            .by_index(index)
+            .map_err(|e| AppError::Execution(format!("Failed to read metadata.json: {}", e)))?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        let payload: PackageMetadataPayload =
-            serde_json::from_slice(&buffer).map_err(|e| {
-                AppError::Execution(format!("Invalid metadata JSON: {}", e))
-            })?;
+        let payload: PackageMetadataPayload = serde_json::from_slice(&buffer)
+            .map_err(|e| AppError::Execution(format!("Invalid metadata JSON: {}", e)))?;
         let spec = match payload {
             PackageMetadataPayload::Single(spec) => spec,
             PackageMetadataPayload::Multi { install_plugins } => {
@@ -400,25 +383,17 @@ impl PluginService {
         Ok((spec, metadata_dir))
     }
 
-    fn read_metadata_from_dir(
-        root: &Path,
-    ) -> Result<(PackageMetadata, Option<PathBuf>)> {
+    fn read_metadata_from_dir(root: &Path) -> Result<(PackageMetadata, Option<PathBuf>)> {
         let mut matches = Vec::new();
         let mut stack = vec![root.to_path_buf()];
 
         while let Some(dir) = stack.pop() {
             let entries = fs::read_dir(&dir).map_err(|e| {
-                AppError::Execution(format!(
-                    "Failed to read extracted package: {}",
-                    e
-                ))
+                AppError::Execution(format!("Failed to read extracted package: {}", e))
             })?;
             for entry in entries {
                 let entry = entry.map_err(|e| {
-                    AppError::Execution(format!(
-                        "Failed to read extracted package: {}",
-                        e
-                    ))
+                    AppError::Execution(format!("Failed to read extracted package: {}", e))
                 })?;
                 let path = entry.path();
                 if path.is_dir() {
@@ -443,13 +418,10 @@ impl PluginService {
         }
 
         let metadata_path = matches.remove(0);
-        let buffer = fs::read(&metadata_path).map_err(|e| {
-            AppError::Execution(format!("Failed to read metadata.json: {}", e))
-        })?;
-        let payload: PackageMetadataPayload =
-            serde_json::from_slice(&buffer).map_err(|e| {
-                AppError::Execution(format!("Invalid metadata JSON: {}", e))
-            })?;
+        let buffer = fs::read(&metadata_path)
+            .map_err(|e| AppError::Execution(format!("Failed to read metadata.json: {}", e)))?;
+        let payload: PackageMetadataPayload = serde_json::from_slice(&buffer)
+            .map_err(|e| AppError::Execution(format!("Invalid metadata JSON: {}", e)))?;
         let spec = match payload {
             PackageMetadataPayload::Single(spec) => spec,
             PackageMetadataPayload::Multi { install_plugins } => {
@@ -484,16 +456,17 @@ impl PluginService {
             return Ok(bytes);
         }
 
-        let response = reqwest::get(url).await.map_err(|e| {
-            AppError::Execution(format!("Failed to download {}: {}", label, e))
-        })?;
-        let response = response.error_for_status().map_err(|e| {
-            AppError::Execution(format!("Failed to download {}: {}", label, e))
-        })?;
+        let response = reqwest::get(url)
+            .await
+            .map_err(|e| AppError::Execution(format!("Failed to download {}: {}", label, e)))?;
+        let response = response
+            .error_for_status()
+            .map_err(|e| AppError::Execution(format!("Failed to download {}: {}", label, e)))?;
 
-        let bytes = response.bytes().await.map_err(|e| {
-            AppError::Execution(format!("Failed to read {} bytes: {}", label, e))
-        })?;
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| AppError::Execution(format!("Failed to read {} bytes: {}", label, e)))?;
 
         Ok(bytes.to_vec())
     }
@@ -569,16 +542,11 @@ impl PluginService {
         )))
     }
 
-    fn normalize_plugin_id(
-        plugin_id: Option<String>,
-        name: &str,
-    ) -> Result<String> {
+    fn normalize_plugin_id(plugin_id: Option<String>, name: &str) -> Result<String> {
         let plugin_id_raw = plugin_id.unwrap_or_else(|| name.to_string());
         let plugin_id = plugin_id_raw.trim();
         if plugin_id.is_empty() {
-            return Err(AppError::Execution(
-                "Plugin id cannot be empty".to_string(),
-            ));
+            return Err(AppError::Execution("Plugin id cannot be empty".to_string()));
         }
         if plugin_id != plugin_id_raw {
             return Err(AppError::Execution(format!(
@@ -599,10 +567,7 @@ impl PluginService {
         }
         let current = current.trim();
         let candidate = Version::parse(candidate).map_err(|e| {
-            AppError::Execution(format!(
-                "Invalid plugin version '{}': {}",
-                candidate, e
-            ))
+            AppError::Execution(format!("Invalid plugin version '{}': {}", candidate, e))
         })?;
         let current = Version::parse(current).map_err(|e| {
             AppError::Execution(format!(
@@ -619,9 +584,7 @@ impl PluginService {
         Ok(())
     }
 
-    fn normalize_min_atom_node_version(
-        raw: Option<String>,
-    ) -> Result<Option<String>> {
+    fn normalize_min_atom_node_version(raw: Option<String>) -> Result<Option<String>> {
         let Some(raw) = raw else {
             return Ok(None);
         };
@@ -671,7 +634,7 @@ impl PluginService {
             _ => {
                 return Err(crate::error::AppError::Execution(
                     "Plugin id must be a valid identifier".to_string(),
-                ))
+                ));
             }
         }
         if components.next().is_some() {
@@ -821,11 +784,7 @@ impl PluginService {
             cmd.current_dir(dir);
         }
         let output = cmd.output().await.map_err(|e| {
-            crate::error::AppError::Execution(format!(
-                "Failed to run uv {}: {}",
-                args.join(" "),
-                e
-            ))
+            crate::error::AppError::Execution(format!("Failed to run uv {}: {}", args.join(" "), e))
         })?;
 
         if output.status.success() {
@@ -847,9 +806,7 @@ impl PluginService {
         Err(crate::error::AppError::Execution(message))
     }
 
-    fn validate_parameters(
-        parameters: Option<Vec<PluginParameter>>,
-    ) -> Result<Option<String>> {
+    fn validate_parameters(parameters: Option<Vec<PluginParameter>>) -> Result<Option<String>> {
         let Some(parameters) = parameters else {
             return Ok(None);
         };
@@ -922,12 +879,8 @@ impl PluginService {
         }
 
         let json = serde_json::to_string(&parameters).map_err(|e| {
-            crate::error::AppError::Execution(format!(
-                "Failed to serialize parameters: {}",
-                e
-            ))
+            crate::error::AppError::Execution(format!("Failed to serialize parameters: {}", e))
         })?;
         Ok(Some(json))
     }
-
 }

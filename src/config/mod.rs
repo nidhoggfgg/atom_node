@@ -95,7 +95,9 @@ impl Config {
             return Ok(());
         }
 
-        if path.components().any(|component| matches!(component, std::path::Component::ParentDir))
+        if path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
         {
             anyhow::bail!("SQLite database path cannot contain '..'");
         }

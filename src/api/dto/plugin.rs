@@ -66,9 +66,7 @@ fn parse_parameters(raw: &Option<String>) -> Result<Option<Vec<PluginParameter>>
     Ok(Some(parameters))
 }
 
-fn parse_python_dependencies(
-    raw: &Option<String>,
-) -> Result<Option<PythonDependencies>, AppError> {
+fn parse_python_dependencies(raw: &Option<String>) -> Result<Option<PythonDependencies>, AppError> {
     let Some(raw) = raw else {
         return Ok(None);
     };
@@ -76,9 +74,8 @@ fn parse_python_dependencies(
     if trimmed.is_empty() {
         return Ok(None);
     }
-    let dependencies = serde_json::from_str(trimmed).map_err(|e| {
-        AppError::Execution(format!("Invalid python dependencies: {}", e))
-    })?;
+    let dependencies = serde_json::from_str(trimmed)
+        .map_err(|e| AppError::Execution(format!("Invalid python dependencies: {}", e)))?;
     Ok(Some(dependencies))
 }
 

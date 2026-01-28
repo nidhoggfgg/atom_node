@@ -31,10 +31,7 @@ pub async fn install_plugin(
     State(state): State<AppState>,
     Json(req): Json<InstallPluginRequest>,
 ) -> Result<(StatusCode, Json<PluginResponse>)> {
-    let plugin = state
-        .plugin_service
-        .install_plugin(req.package_url)
-        .await?;
+    let plugin = state.plugin_service.install_plugin(req.package_url).await?;
 
     Ok((StatusCode::CREATED, Json(PluginResponse::try_from(plugin)?)))
 }

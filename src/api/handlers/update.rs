@@ -1,11 +1,7 @@
 use crate::api::dto::update::{UpdateRequest, UpdateResponse};
 use crate::api::routes::AppState;
 use crate::error::Result;
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 
 pub async fn stage_update(
     State(state): State<AppState>,

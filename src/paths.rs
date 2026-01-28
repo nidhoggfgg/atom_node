@@ -20,9 +20,9 @@ pub fn install_root() -> Result<PathBuf> {
     }
 
     let exe_path = std::env::current_exe()?;
-    let exe_dir = exe_path.parent().ok_or_else(|| {
-        AppError::Execution("Failed to resolve executable directory".to_string())
-    })?;
+    let exe_dir = exe_path
+        .parent()
+        .ok_or_else(|| AppError::Execution("Failed to resolve executable directory".to_string()))?;
 
     if exe_dir.file_name().and_then(|name| name.to_str()) == Some(BIN_DIR) {
         let root = exe_dir.parent().ok_or_else(|| {

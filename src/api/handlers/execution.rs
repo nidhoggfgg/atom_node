@@ -1,6 +1,9 @@
-use crate::api::dto::execution::{ExecutePluginRequest, ExecutionResponse, ExecutionsListResponse};
+use crate::api::dto::execution::{
+    ApplyExecutionRequest, ExecutePluginRequest, ExecutionResponse, ExecutionsListResponse,
+};
 use crate::api::routes::AppState;
 use crate::error::Result;
+use crate::models::ExecutionStatus;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -16,6 +19,41 @@ pub async fn execute_plugin(
     let execution = state
         .execution_service
         .execute_plugin(&plugin_id, params)
+        .await?;
+    Ok(Json(ExecutionResponse::from(execution)))
+}
+
+pub async fn prepare_plugin(
+    State(state): State<AppState>,
+    Path(plugin_id): Path<String>,
+    Json(req): Json<ExecutePluginRequest>,
+) -> Result<Json<ExecutionResponse>> {
+    let params = req.params.unwrap_or_default();
+    let execution = state
+        .execution_service
+        .prepare_plugin(&plugin_id, params)
+        .await?;
+    // 等待预览完成或失败，最多 15s
+    let execution = state
+        .execution_service
+        .wait_for_states(
+            &execution.id,
+            &[ExecutionStatus::PreviewReady, ExecutionStatus::Failed],
+            15_000,
+        )
+        .await?;
+    Ok(Json(ExecutionResponse::from(execution)))
+}
+
+pub async fn apply_execution(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ApplyExecutionRequest>,
+) -> Result<Json<ExecutionResponse>> {
+    let params = req.params.unwrap_or_default();
+    let execution = state
+        .execution_service
+        .apply_execution(&id, &req.confirm_token, params)
         .await?;
     Ok(Json(ExecutionResponse::from(execution)))
 }

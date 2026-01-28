@@ -1,7 +1,7 @@
-use tray_icon::{Icon, TrayIconBuilder};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
+use tray_icon::{Icon, TrayIconBuilder};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, PostQuitMessage, TranslateMessage, MSG,
+    DispatchMessageW, GetMessageW, MSG, PostQuitMessage, TranslateMessage,
 };
 
 pub fn run_tray_loop(shutdown_tx: tokio::sync::oneshot::Sender<()>) -> anyhow::Result<()> {

@@ -41,11 +41,15 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
         CREATE TABLE IF NOT EXISTS executions (
             id TEXT PRIMARY KEY,
             plugin_id TEXT NOT NULL,
+            phase INTEGER NOT NULL DEFAULT 0,
             status INTEGER NOT NULL,
             pid INTEGER,
             exit_code INTEGER,
             stdout TEXT,
             stderr TEXT,
+            preview_payload TEXT,
+            confirm_token TEXT,
+            expires_at INTEGER,
             started_at INTEGER NOT NULL,
             finished_at INTEGER,
             FOREIGN KEY (plugin_id) REFERENCES plugins(plugin_id) ON DELETE CASCADE
@@ -61,6 +65,7 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     .await?;
 
     ensure_min_atom_node_version_column(&pool).await?;
+    ensure_execution_new_columns(&pool).await?;
 
     Ok(pool)
 }
@@ -77,5 +82,50 @@ async fn ensure_min_atom_node_version_column(pool: &DbPool) -> Result<()> {
             .execute(pool)
             .await?;
     }
+    Ok(())
+}
+
+async fn ensure_execution_new_columns(pool: &DbPool) -> Result<()> {
+    let columns = sqlx::query("PRAGMA table_info(executions)")
+        .fetch_all(pool)
+        .await?;
+
+    let mut has_phase = false;
+    let mut has_preview_payload = false;
+    let mut has_confirm_token = false;
+    let mut has_expires_at = false;
+
+    for row in &columns {
+        let name: String = row.get("name");
+        match name.as_str() {
+            "phase" => has_phase = true,
+            "preview_payload" => has_preview_payload = true,
+            "confirm_token" => has_confirm_token = true,
+            "expires_at" => has_expires_at = true,
+            _ => {}
+        }
+    }
+
+    if !has_phase {
+        sqlx::query("ALTER TABLE executions ADD COLUMN phase INTEGER NOT NULL DEFAULT 0")
+            .execute(pool)
+            .await?;
+    }
+    if !has_preview_payload {
+        sqlx::query("ALTER TABLE executions ADD COLUMN preview_payload TEXT")
+            .execute(pool)
+            .await?;
+    }
+    if !has_confirm_token {
+        sqlx::query("ALTER TABLE executions ADD COLUMN confirm_token TEXT")
+            .execute(pool)
+            .await?;
+    }
+    if !has_expires_at {
+        sqlx::query("ALTER TABLE executions ADD COLUMN expires_at INTEGER")
+            .execute(pool)
+            .await?;
+    }
+
     Ok(())
 }
