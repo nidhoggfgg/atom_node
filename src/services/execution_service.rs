@@ -47,9 +47,9 @@ impl ExecutionService {
             let params_json = serde_json::to_string(&resolved_params).map_err(|e| {
                 AppError::Execution(format!("Failed to serialize parameters: {}", e))
             })?;
-            env.insert("ATOM_PLUGIN_PARAMS".to_string(), params_json);
+            env.insert("ANTHILL_PLUGIN_PARAMS".to_string(), params_json);
         }
-        env.insert("ATOM_PHASE".to_string(), "apply".to_string());
+        env.insert("ANTHILL_PHASE".to_string(), "apply".to_string());
 
         self.start_process(
             plugin,
@@ -78,9 +78,9 @@ impl ExecutionService {
             let params_json = serde_json::to_string(&resolved_params).map_err(|e| {
                 AppError::Execution(format!("Failed to serialize parameters: {}", e))
             })?;
-            env.insert("ATOM_PLUGIN_PARAMS".to_string(), params_json);
+            env.insert("ANTHILL_PLUGIN_PARAMS".to_string(), params_json);
         }
-        env.insert("ATOM_PHASE".to_string(), "prepare".to_string());
+        env.insert("ANTHILL_PHASE".to_string(), "prepare".to_string());
 
         self.start_process(
             plugin,
@@ -132,11 +132,11 @@ impl ExecutionService {
             let params_json = serde_json::to_string(&resolved_params).map_err(|e| {
                 AppError::Execution(format!("Failed to serialize parameters: {}", e))
             })?;
-            env.insert("ATOM_PLUGIN_PARAMS".to_string(), params_json);
+            env.insert("ANTHILL_PLUGIN_PARAMS".to_string(), params_json);
         }
-        env.insert("ATOM_PHASE".to_string(), "apply".to_string());
+        env.insert("ANTHILL_PHASE".to_string(), "apply".to_string());
         if let Some(plan) = execution.preview_payload.clone() {
-            env.insert("ATOM_PREVIEW_PLAN".to_string(), plan);
+            env.insert("ANTHILL_PREVIEW_PLAN".to_string(), plan);
         }
 
         self.exec_repo.begin_apply(id).await?;
