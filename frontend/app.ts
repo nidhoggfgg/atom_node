@@ -63,14 +63,18 @@ type PluginPayload = Omit<Plugin, "id"> & { id?: string; plugin_id?: string };
 type Execution = {
   id: string;
   plugin_id: string;
+  phase: string;
   status: string;
   pid: number | null;
   exit_code: number | null;
   stdout: string | null;
   stderr: string | null;
+  preview_payload?: string | null;
+  confirm_token?: string | null;
+  expires_at?: string | number | null;
+  error_message?: string | null;
   started_at: string | number;
   finished_at: string | number | null;
-  error_message: string | null;
 };
 
 type HealthResponse = {
@@ -83,6 +87,11 @@ type PluginsListResponse = { data: PluginPayload[] };
 type ExecutionsListResponse = { data: Execution[] };
 
 type ExecutePluginRequest = {
+  params?: Record<string, unknown>;
+};
+
+type ApplyExecutionRequest = {
+  confirm_token: string;
   params?: Record<string, unknown>;
 };
 
@@ -118,6 +127,9 @@ const state = {
   connected: false,
   selectedPlugin: null as Plugin | null,
   filterText: "",
+  previewExecution: null as Execution | null,
+  previewParamsSignature: "",
+  previewParams: {} as Record<string, unknown>,
 };
 
 const reducedMotion =
@@ -158,6 +170,21 @@ const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+  async preparePlugin(id: string, payload: ExecutePluginRequest): Promise<Execution> {
+    return request<Execution>(`/api/plugins/${id}/prepare`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async applyExecution(id: string, payload: ApplyExecutionRequest): Promise<Execution> {
+    return request<Execution>(`/api/executions/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async getExecution(id: string): Promise<Execution> {
+    return request<Execution>(`/api/executions/${id}`);
   },
   async listExecutions(pluginId?: string): Promise<ExecutionsListResponse> {
     const query = pluginId ? `?plugin_id=${encodeURIComponent(pluginId)}` : "";
@@ -321,6 +348,84 @@ function groupParameters(
   return result;
 }
 
+function collectExecutionParams(
+  executionForm: HTMLFormElement,
+  plugin: Plugin
+): { params: Record<string, unknown>; payload: ExecutePluginRequest; signature: string } {
+  const formData = new FormData(executionForm);
+  const params: Record<string, unknown> = {};
+
+  if (plugin.parameters && plugin.parameters.length > 0) {
+    plugin.parameters.forEach((param) => {
+      if (param.type === "boolean") {
+        const input = executionForm.querySelector<HTMLInputElement>(`[name="${param.name}"]`);
+        if (input) {
+          const checked = input.checked;
+          if (checked || param.default === true || param.default === "true") {
+            params[param.name] = checked;
+          }
+        }
+        return;
+      }
+
+      if (param.type === "multi_select") {
+        const values = formData
+          .getAll(param.name)
+          .map((value) => String(value))
+          .filter((value) => value !== "");
+        if (values.length > 0) {
+          params[param.name] = values.map((value) => parseChoiceValue(value));
+        }
+        return;
+      }
+
+      const value = formData.get(param.name);
+      if (value === null || value === "") {
+        return;
+      }
+
+      const hasChoices = Array.isArray(param.choices) && param.choices.length > 0;
+      if (param.type === "select" || (param.type === "string" && hasChoices)) {
+        params[param.name] = parseChoiceValue(String(value));
+        return;
+      }
+
+      switch (param.type) {
+        case "string":
+        case "date":
+        case "textarea":
+        case "file":
+        case "directory":
+          params[param.name] = String(value);
+          break;
+        case "number":
+          params[param.name] = Number(value);
+          break;
+        case "integer":
+          params[param.name] = Number.parseInt(String(value), 10);
+          break;
+        case "json":
+        default:
+          try {
+            params[param.name] = JSON.parse(String(value));
+          } catch {
+            params[param.name] = String(value);
+          }
+          break;
+      }
+    });
+  }
+
+  const payload: ExecutePluginRequest = {};
+  if (Object.keys(params).length) {
+    payload.params = params;
+  }
+
+  const signature = Object.keys(params).length ? JSON.stringify(params) : "";
+
+  return { params, payload, signature };
+}
+
 function notify(message: string, variant: "success" | "error" | "info" = "info") {
   dom.notice.textContent = message;
   dom.notice.dataset.variant = variant;
@@ -354,6 +459,9 @@ function closeModal(modal: HTMLElement) {
   modal.classList.remove("active");
   if (modal === dom.pluginModal) {
     state.selectedPlugin = null;
+    state.previewExecution = null;
+    state.previewParamsSignature = "";
+    state.previewParams = {};
     renderPluginList();
   }
 }
@@ -540,9 +648,12 @@ function renderPluginDetail(plugin: Plugin) {
       <form id="execution-form" class="execution-form">
         <div id="execution-dynamic-fields"></div>
         <div class="form__actions">
-          <button class="btn btn--primary" type="submit" id="btn-execute">运行插件</button>
+          <button class="btn btn--secondary" type="button" id="btn-preview">预览</button>
+          <button class="btn btn--primary" type="submit" id="btn-execute">直接执行</button>
         </div>
+        <p class="form__hint">预览会生成变更计划，确认后再执行。</p>
       </form>
+      <div id="preview-panel" class="preview-panel"></div>
     </div>
 
     <div class="plugin-detail__section" id="executions-section">
@@ -563,17 +674,29 @@ function renderPluginDetail(plugin: Plugin) {
 
   const executionForm = dom.pluginDetail.querySelector<HTMLFormElement>("#execution-form")!;
   executionForm.addEventListener("submit", handleExecution);
+  executionForm.addEventListener("input", () => renderPreviewPanel());
+
+  const previewBtn = document.getElementById("btn-preview") as HTMLButtonElement;
+  if (previewBtn) {
+    previewBtn.addEventListener("click", handlePreview);
+  }
 
   const executeBtn = document.getElementById("btn-execute") as HTMLButtonElement;
   if (executeBtn && !plugin.enabled) {
     executeBtn.disabled = true;
     executeBtn.title = "需先启用插件才能运行";
   }
+  if (previewBtn && !plugin.enabled) {
+    previewBtn.disabled = true;
+    previewBtn.title = "需先启用插件才能预览";
+  }
 
   const actionButtons = dom.pluginDetail.querySelectorAll<HTMLButtonElement>('button[data-action]');
   actionButtons.forEach((btn) => {
     btn.addEventListener("click", () => handlePluginAction(btn.dataset.action!, plugin.id));
   });
+
+  renderPreviewPanel();
 }
 
 function renderExecutionForm(plugin: Plugin) {
@@ -892,10 +1015,20 @@ function buildExecutionCard(execution: Execution) {
   const statusClass = `execution-card__status--${execution.status.toLowerCase()}`;
 
   const showStop = execution.status === "Running" || execution.status === "Pending";
+  const phaseLabel =
+    execution.phase === "Prepare" ? "预览" : execution.phase === "Apply" ? "执行" : "执行";
+  const rawOutput =
+    execution.phase === "Prepare"
+      ? execution.preview_payload || execution.stdout || "无预览输出。"
+      : execution.stdout || "无输出。";
+  const output =
+    execution.phase === "Prepare" ? formatPreviewOutput(rawOutput) : rawOutput;
 
   card.innerHTML = `
     <div class="execution-card__header">
-      <div class="execution-card__meta-line">开始时间：${formatDateTime(execution.started_at)}</div>
+      <div class="execution-card__meta-line">开始时间：${formatDateTime(
+        execution.started_at
+      )} · 阶段：${phaseLabel}</div>
       <span class="execution-card__status ${statusClass}">${escapeHtml(execution.status)}</span>
     </div>
     <div class="execution-card__meta">
@@ -904,8 +1037,8 @@ function buildExecutionCard(execution: Execution) {
     </div>
     ${execution.error_message ? `<p style="color: #9a2a1d; font-size: 0.85rem; margin-top: 8px;">${escapeHtml(execution.error_message)}</p>` : ""}
     <div class="execution-card__output">
-      <summary>输出</summary>
-      <pre>${escapeHtml(execution.stdout || "无输出。")}</pre>
+      <summary>${execution.phase === "Prepare" ? "预览输出" : "输出"}</summary>
+      <pre>${escapeHtml(output)}</pre>
     </div>
   `;
 
@@ -925,6 +1058,9 @@ function selectPlugin(pluginId: string) {
   const plugin = state.plugins.find((p) => p.id === pluginId);
   if (!plugin) return;
 
+  state.previewExecution = null;
+  state.previewParamsSignature = "";
+  state.previewParams = {};
   state.selectedPlugin = plugin;
   renderPluginList();
   renderPluginDetail(plugin);
@@ -947,74 +1083,7 @@ async function handleExecution(event: SubmitEvent) {
   const executionForm = dom.pluginDetail.querySelector<HTMLFormElement>("#execution-form");
   if (!executionForm) return;
 
-  const formData = new FormData(executionForm);
-  const params: Record<string, unknown> = {};
-
-  if (state.selectedPlugin.parameters && state.selectedPlugin.parameters.length > 0) {
-    state.selectedPlugin.parameters.forEach((param) => {
-      if (param.type === "boolean") {
-        const input = executionForm.querySelector<HTMLInputElement>(`[name="${param.name}"]`);
-        if (input) {
-          const checked = input.checked;
-          if (checked || param.default === true || param.default === "true") {
-            params[param.name] = checked;
-          }
-        }
-        return;
-      }
-
-      if (param.type === "multi_select") {
-        const values = formData
-          .getAll(param.name)
-          .map((value) => String(value))
-          .filter((value) => value !== "");
-        if (values.length > 0) {
-          params[param.name] = values.map((value) => parseChoiceValue(value));
-        }
-        return;
-      }
-
-      const value = formData.get(param.name);
-      if (value === null || value === "") {
-        return;
-      }
-
-      const hasChoices = Array.isArray(param.choices) && param.choices.length > 0;
-      if (param.type === "select" || (param.type === "string" && hasChoices)) {
-        params[param.name] = parseChoiceValue(String(value));
-        return;
-      }
-
-      switch (param.type) {
-        case "string":
-        case "date":
-        case "textarea":
-        case "file":
-        case "directory":
-          params[param.name] = String(value);
-          break;
-        case "number":
-          params[param.name] = Number(value);
-          break;
-        case "integer":
-          params[param.name] = Number.parseInt(String(value), 10);
-          break;
-        case "json":
-        default:
-          try {
-            params[param.name] = JSON.parse(String(value));
-          } catch {
-            params[param.name] = String(value);
-          }
-          break;
-      }
-    });
-  }
-
-  const payload: ExecutePluginRequest = {};
-  if (Object.keys(params).length) {
-    payload.params = params;
-  }
+  const { payload } = collectExecutionParams(executionForm, state.selectedPlugin);
 
   const executeBtn = document.getElementById("btn-execute") as HTMLButtonElement;
   if (executeBtn) {
@@ -1023,6 +1092,10 @@ async function handleExecution(event: SubmitEvent) {
   }
 
   try {
+    state.previewExecution = null;
+    state.previewParamsSignature = "";
+    state.previewParams = {};
+    renderPreviewPanel();
     await api.executePlugin(state.selectedPlugin.id, payload);
     await loadExecutions();
     notify("插件已开始执行。", "success");
@@ -1033,6 +1106,249 @@ async function handleExecution(event: SubmitEvent) {
     if (executeBtn) {
       executeBtn.disabled = false;
       executeBtn.textContent = "运行插件";
+    }
+  }
+}
+
+function getPreviewOutput(execution: Execution): string {
+  return execution.preview_payload || execution.stdout || "";
+}
+
+function formatPreviewOutput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return value;
+  }
+}
+
+function isPreviewExpired(execution: Execution): boolean {
+  if (!execution.expires_at) return false;
+  const expiresAt = toTimestampMs(execution.expires_at);
+  return expiresAt !== null && Date.now() > expiresAt;
+}
+
+function renderPreviewPanel() {
+  const panel = document.getElementById("preview-panel");
+  if (!panel) return;
+
+  const preview = state.previewExecution;
+  if (!preview) {
+    panel.innerHTML = "";
+    panel.classList.remove("is-visible");
+    return;
+  }
+
+  panel.classList.add("is-visible");
+
+  const status = preview.status;
+  const isReady = status === "PreviewReady";
+  const isFailed = status === "Failed";
+  const isRunning = status === "Running" || status === "Pending";
+  const expired = isPreviewExpired(preview);
+
+  let paramsChanged = false;
+  const executionForm = dom.pluginDetail.querySelector<HTMLFormElement>("#execution-form");
+  if (executionForm && state.selectedPlugin) {
+    const { signature } = collectExecutionParams(executionForm, state.selectedPlugin);
+    if (state.previewParamsSignature && signature !== state.previewParamsSignature) {
+      paramsChanged = true;
+    }
+  }
+
+  const output = getPreviewOutput(preview);
+  const outputHtml = output ? escapeHtml(formatPreviewOutput(output)) : "无预览输出。";
+  const expiresAtText = preview.expires_at ? formatDateTime(preview.expires_at) : "--";
+
+  const warning =
+    paramsChanged && isReady
+      ? `<p class="preview-panel__warning">参数已变更，请重新预览后再执行。</p>`
+      : "";
+
+  const expiredNotice =
+    expired && isReady
+      ? `<p class="preview-panel__warning">预览已过期，请重新预览。</p>`
+      : "";
+
+  const errorDetail =
+    isFailed && preview.stderr
+      ? `<pre>${escapeHtml(preview.stderr)}</pre>`
+      : isFailed
+        ? `<pre>${escapeHtml(preview.stdout || "预览执行失败。")}</pre>`
+        : "";
+
+  panel.innerHTML = `
+    <div class="preview-panel__header">
+      <div class="preview-panel__meta">
+        <span class="badge badge--info">预览${isReady ? "就绪" : isFailed ? "失败" : "中"}</span>
+        <span>过期时间: ${expiresAtText}</span>
+      </div>
+      <button class="btn btn--ghost btn--small" type="button" data-preview-action="clear">清除</button>
+    </div>
+    ${warning}${expiredNotice}
+    ${
+      isRunning
+        ? `<p class="muted">预览生成中，请稍候...</p>`
+        : isFailed
+          ? `<div class="preview-panel__error">${errorDetail}</div>`
+          : `<div class="preview-panel__body"><pre>${outputHtml}</pre></div>`
+    }
+    <div class="form__actions preview-panel__actions">
+      ${
+        isReady
+          ? `<button class="btn btn--primary" type="button" data-preview-action="apply" ${
+              expired || paramsChanged ? "disabled" : ""
+            }>${expired ? "预览已过期" : "确认执行"}</button>`
+          : ""
+      }
+      <button class="btn btn--secondary" type="button" data-preview-action="rerun">重新预览</button>
+    </div>
+  `;
+
+  panel.querySelectorAll<HTMLButtonElement>("[data-preview-action]").forEach((button) => {
+    const action = button.dataset.previewAction;
+    if (action === "clear") {
+      button.addEventListener("click", () => {
+        state.previewExecution = null;
+        state.previewParamsSignature = "";
+        state.previewParams = {};
+        renderPreviewPanel();
+      });
+      return;
+    }
+    if (action === "rerun") {
+      button.addEventListener("click", () => handlePreview());
+      return;
+    }
+    if (action === "apply") {
+      button.addEventListener("click", () => applyPreview());
+    }
+  });
+}
+
+async function pollPreviewExecution(executionId: string, timeoutMs = 20_000) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const execution = await api.getExecution(executionId);
+      if (state.previewExecution && state.previewExecution.id !== executionId) {
+        return;
+      }
+      state.previewExecution = execution;
+      renderPreviewPanel();
+      if (execution.status === "PreviewReady" || execution.status === "Failed") {
+        return;
+      }
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
+async function handlePreview() {
+  if (!state.selectedPlugin) {
+    notify("未选择插件。", "error");
+    return;
+  }
+
+  if (!state.selectedPlugin.enabled) {
+    notify("需先启用插件才能预览。", "error");
+    return;
+  }
+
+  const executionForm = dom.pluginDetail.querySelector<HTMLFormElement>("#execution-form");
+  if (!executionForm) return;
+
+  const { params, payload, signature } = collectExecutionParams(executionForm, state.selectedPlugin);
+
+  const previewBtn = document.getElementById("btn-preview") as HTMLButtonElement;
+  if (previewBtn) {
+    previewBtn.disabled = true;
+    previewBtn.textContent = "预览中...";
+  }
+
+  try {
+    state.previewExecution = null;
+    renderPreviewPanel();
+    const execution = await api.preparePlugin(state.selectedPlugin.id, payload);
+    state.previewExecution = execution;
+    state.previewParamsSignature = signature;
+    state.previewParams = params;
+    renderPreviewPanel();
+    await loadExecutions();
+    if (execution.status !== "PreviewReady" && execution.status !== "Failed") {
+      await pollPreviewExecution(execution.id);
+      await loadExecutions();
+    }
+    const finalExecution = state.previewExecution || execution;
+    if (finalExecution.status === "Failed") {
+      notify("预览失败，请查看详情。", "error");
+    } else {
+      notify("预览已生成。", "success");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "预览失败。";
+    notify(message, "error");
+  } finally {
+    if (previewBtn) {
+      previewBtn.disabled = false;
+      previewBtn.textContent = "预览";
+    }
+  }
+}
+
+async function applyPreview() {
+  const preview = state.previewExecution;
+  if (!preview || !preview.confirm_token) {
+    notify("暂无可用预览，请重新预览。", "error");
+    return;
+  }
+
+  if (isPreviewExpired(preview)) {
+    notify("预览已过期，请重新预览。", "error");
+    return;
+  }
+
+  const executionForm = dom.pluginDetail.querySelector<HTMLFormElement>("#execution-form");
+  if (executionForm && state.selectedPlugin) {
+    const { signature } = collectExecutionParams(executionForm, state.selectedPlugin);
+    if (state.previewParamsSignature && signature !== state.previewParamsSignature) {
+      notify("参数已变更，请重新预览后再执行。", "error");
+      return;
+    }
+  }
+
+  const applyButton = document.querySelector<HTMLButtonElement>(
+    '[data-preview-action="apply"]'
+  );
+  if (applyButton) {
+    applyButton.disabled = true;
+    applyButton.textContent = "执行中...";
+  }
+
+  try {
+    await api.applyExecution(preview.id, {
+      confirm_token: preview.confirm_token,
+      params: state.previewParams,
+    });
+    state.previewExecution = null;
+    state.previewParamsSignature = "";
+    state.previewParams = {};
+    renderPreviewPanel();
+    await loadExecutions();
+    notify("执行已开始。", "success");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "执行失败。";
+    notify(message, "error");
+  } finally {
+    if (applyButton) {
+      applyButton.disabled = false;
+      applyButton.textContent = "确认执行";
     }
   }
 }
