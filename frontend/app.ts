@@ -100,6 +100,11 @@ const dom = {
   pluginModal: document.querySelector<HTMLElement>("#plugin-modal")!,
   pluginModalTitle: document.querySelector<HTMLElement>("#plugin-modal-title")!,
   pluginModalMeta: document.querySelector<HTMLElement>("#plugin-modal-meta")!,
+  openInstallButton: document.querySelector<HTMLButtonElement>("#open-install-modal")!,
+  installModal: document.querySelector<HTMLElement>("#install-modal")!,
+  installForm: document.querySelector<HTMLFormElement>("#install-form")!,
+  installPathInput: document.querySelector<HTMLInputElement>("#install-path")!,
+  installFileInput: document.querySelector<HTMLInputElement>("#install-file")!,
   notice: document.querySelector<HTMLElement>("#notice")!,
   connectionModal: document.querySelector<HTMLElement>("#connection-modal")!,
   modalCloseButtons: document.querySelectorAll<HTMLElement>('[data-modal="close"]'),
@@ -127,6 +132,12 @@ const api = {
   },
   async listPlugins(): Promise<PluginsListResponse> {
     return request<PluginsListResponse>("/api/plugins");
+  },
+  async installPlugin(packageUrl: string): Promise<PluginPayload> {
+    return request<PluginPayload>("/api/plugins", {
+      method: "POST",
+      body: JSON.stringify({ package_url: packageUrl }),
+    });
   },
   async enablePlugin(id: string): Promise<void> {
     await request<void>(`/api/plugins/${id}/enable`, { method: "PUT" });
@@ -190,6 +201,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");
+}
+
+function resolveFilePath(file: File): string | null {
+  const fileWithPath = file as File & { path?: string; webkitRelativePath?: string };
+  if (fileWithPath.path && fileWithPath.path.trim()) {
+    return fileWithPath.path;
+  }
+  if (fileWithPath.webkitRelativePath && fileWithPath.webkitRelativePath.trim()) {
+    return fileWithPath.webkitRelativePath;
+  }
+  return null;
 }
 
 function normalizePlugin(plugin: PluginPayload): Plugin {
@@ -373,6 +395,45 @@ async function loadPlugins() {
   } catch (error) {
     const message = error instanceof Error ? error.message : "加载插件失败。";
     notify(message, "error");
+  }
+}
+
+async function handleInstall(event: SubmitEvent) {
+  event.preventDefault();
+
+  if (!state.connected) {
+    notify("请先连接到服务。", "error");
+    closeModal(dom.installModal);
+    openModal(dom.connectionModal);
+    return;
+  }
+
+  const packageUrl = dom.installPathInput.value.trim();
+  if (!packageUrl) {
+    notify("请输入插件包路径。", "error");
+    return;
+  }
+
+  const submitBtn = dom.installForm.querySelector<HTMLButtonElement>("#btn-install");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "正在安装...";
+  }
+
+  try {
+    await api.installPlugin(packageUrl);
+    await loadPlugins();
+    dom.installForm.reset();
+    closeModal(dom.installModal);
+    notify("插件安装成功。", "success");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "安装插件失败。";
+    notify(detail, "error");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "安装";
+    }
   }
 }
 
@@ -1132,6 +1193,24 @@ dom.connectForm.addEventListener("submit", (event) => {
 dom.pluginSearch.addEventListener("input", (event) => {
   state.filterText = (event.target as HTMLInputElement).value.trim();
   renderPluginList();
+});
+
+dom.openInstallButton.addEventListener("click", () => {
+  openModal(dom.installModal);
+});
+
+dom.installForm.addEventListener("submit", handleInstall);
+
+dom.installFileInput.addEventListener("change", () => {
+  const file = dom.installFileInput.files?.[0];
+  if (!file) return;
+  const resolvedPath = resolveFilePath(file);
+  if (resolvedPath) {
+    dom.installPathInput.value = resolvedPath;
+    return;
+  }
+  dom.installPathInput.value = file.name;
+  notify("无法读取完整路径，请手动填写服务器路径。", "info");
 });
 
 dom.modalCloseButtons.forEach((btn) => {

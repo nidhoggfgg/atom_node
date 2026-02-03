@@ -50,6 +50,18 @@
                 <strong id="connection-state">离线</strong>
               </div>
             </div>
+            <div class="install-card">
+              <div class="install-card__copy">
+                <p class="install-card__eyebrow">本地安装</p>
+                <h3>安装本地插件包</h3>
+                <p class="install-card__hint">
+                  输入服务器可访问的路径或 <span class="mono">file://</span> URL。
+                </p>
+              </div>
+              <button class="btn btn--primary" id="open-install-modal" type="button">
+                安装插件
+              </button>
+            </div>
           </div>
         </section>
 
@@ -95,6 +107,44 @@
         </div>
         <div class="modal__body">
           <div id="plugin-detail" class="plugin-detail"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="install-modal">
+      <div class="modal__backdrop"></div>
+      <div class="modal__content">
+        <div class="modal__header">
+          <h2>安装本地插件</h2>
+          <button class="btn btn--ghost" type="button" data-modal="close">×</button>
+        </div>
+        <div class="modal__body">
+          <form id="install-form" class="form">
+            <label class="field">
+              <span>插件包路径</span>
+              <div class="path-field">
+                <input
+                  id="install-path"
+                  type="text"
+                  placeholder="/path/to/plugin.zip 或 file:///path/to/plugin.zip"
+                  required
+                />
+                <input
+                  id="install-file"
+                  class="path-field__picker"
+                  type="file"
+                  accept=".zip"
+                />
+              </div>
+              <p class="field__hint">
+                请输入服务端可访问的本地路径，或使用 <span class="mono">file://</span>。
+              </p>
+            </label>
+            <div class="form__actions">
+              <button class="btn btn--secondary" type="button" data-modal="close">取消</button>
+              <button class="btn btn--primary" type="submit" id="btn-install">安装</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
