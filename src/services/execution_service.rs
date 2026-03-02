@@ -7,7 +7,7 @@ use chrono::Utc;
 use semver::Version;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 #[derive(Clone)]
 pub struct ExecutionService {
@@ -465,10 +465,7 @@ impl ExecutionService {
             return Ok(());
         }
 
-        if choices
-            .iter()
-            .any(|choice| matches_choice(choice, value))
-        {
+        if choices.iter().any(|choice| matches_choice(choice, value)) {
             return Ok(());
         }
 

@@ -923,8 +923,7 @@ impl PluginService {
                                 default_matches = true;
                                 break;
                             }
-                            if let Some(value) =
-                                choice.as_object().and_then(|obj| obj.get("value"))
+                            if let Some(value) = choice.as_object().and_then(|obj| obj.get("value"))
                             {
                                 if value == default {
                                     default_matches = true;

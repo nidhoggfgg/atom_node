@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::models::{Plugin, PluginParameter, PluginParameterGroup, PythonDependencies};
-use serde_json::Value;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct InstallPluginRequest {

@@ -4,9 +4,31 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, MSG, PostQuitMessage, TranslateMessage,
 };
 
+static LAUNCH_URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub fn set_launch_url(url: String) {
+    let _ = LAUNCH_URL.set(url);
+}
+
+fn open_browser(url: &str) -> std::io::Result<()> {
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .status()?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(
+            "browser command exited with non-zero status",
+        ))
+    }
+}
+
 pub fn run_tray_loop(shutdown_tx: tokio::sync::oneshot::Sender<()>) -> anyhow::Result<()> {
     let menu = Menu::new();
+    let open_item = MenuItem::new("Open Web UI", true, None);
     let exit_item = MenuItem::new("Exit", true, None);
+    menu.append(&open_item)?;
     menu.append(&exit_item)?;
 
     let icon = build_tray_icon()?;
@@ -16,6 +38,7 @@ pub fn run_tray_loop(shutdown_tx: tokio::sync::oneshot::Sender<()>) -> anyhow::R
         .with_icon(icon)
         .build()?;
 
+    let open_id = open_item.id().clone();
     let exit_id = exit_item.id().clone();
     let mut shutdown_tx = Some(shutdown_tx);
 
@@ -36,7 +59,15 @@ pub fn run_tray_loop(shutdown_tx: tokio::sync::oneshot::Sender<()>) -> anyhow::R
         }
 
         while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id == exit_id {
+            if event.id == open_id {
+                if let Some(url) = LAUNCH_URL.get() {
+                    if let Err(err) = open_browser(url) {
+                        eprintln!("open web ui failed: {err}");
+                    }
+                } else {
+                    eprintln!("open web ui failed: launch url is not ready");
+                }
+            } else if event.id == exit_id {
                 if let Some(tx) = shutdown_tx.take() {
                     let _ = tx.send(());
                 }
