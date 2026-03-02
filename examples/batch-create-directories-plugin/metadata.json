@@ -1,0 +1,64 @@
+{
+  "plugin_id": "batch-create-directories",
+  "name": "Batch Create Directories",
+  "version": "0.1.0",
+  "plugin_type": "python",
+  "description": "Create multiple directories in one run with preview support.",
+  "author": "AntHill Example",
+  "entry_point": "main.py",
+  "min_atom_node_version": "0.1.0",
+  "groups": [
+    {
+      "id": "basic",
+      "label": "Basic"
+    },
+    {
+      "id": "advanced",
+      "label": "Advanced"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "base_dir",
+      "type": "directory",
+      "description": "Base directory for relative paths.",
+      "label": "Base Directory",
+      "default": ".",
+      "group": "basic"
+    },
+    {
+      "name": "directories",
+      "type": "textarea",
+      "description": "Directories to create, one path per line.",
+      "label": "Directory List",
+      "group": "basic"
+    },
+    {
+      "name": "exist_ok",
+      "type": "boolean",
+      "description": "If enabled, existing directories are treated as success.",
+      "label": "Allow Existing Directories",
+      "default": true,
+      "group": "advanced"
+    },
+    {
+      "name": "create_parents",
+      "type": "boolean",
+      "description": "If enabled, missing parent directories are created automatically.",
+      "label": "Create Parent Directories",
+      "default": true,
+      "group": "advanced"
+    },
+    {
+      "name": "allow_absolute_paths",
+      "type": "boolean",
+      "description": "If enabled, absolute paths in the list are allowed.",
+      "label": "Allow Absolute Paths",
+      "default": false,
+      "group": "advanced"
+    }
+  ],
+  "metadata": {
+    "supports_preview": true
+  }
+}
