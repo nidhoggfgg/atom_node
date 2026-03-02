@@ -5,6 +5,7 @@ use axum::{
     Router,
     routing::{delete, get, post, put},
 };
+use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -45,5 +46,13 @@ pub fn create_router(plugin_service: PluginService, execution_service: Execution
         .route("/api/update", post(update::stage_update))
         .with_state(state);
 
-    add_cors(api_routes)
+    let app = add_cors(api_routes);
+    let web_root = crate::paths::install_root()
+        .map(|root| root.join("web"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("web"));
+    let static_service = ServeDir::new(web_root.clone())
+        .append_index_html_on_directories(true)
+        .not_found_service(ServeFile::new(web_root.join("index.html")));
+
+    app.fallback_service(static_service)
 }

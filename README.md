@@ -129,7 +129,7 @@ RUST_LOG=debug cargo run
 
 ### 使用打包脚本
 
-项目提供了自动化打包脚本 `scripts/package_bundle.sh`，可以构建包含 uv 的发布包。
+项目提供了自动化打包脚本 `scripts/package_bundle.sh`，可以构建包含 uv 和前端静态资源的发布包。
 
 #### 基本用法
 
@@ -175,6 +175,7 @@ RUST_LOG=debug cargo run
 dist/
 └── anthill-0.1.3-linux-x86_64/
     ├── anthill              # 可执行文件
+    ├── web/                 # 打包后的前端静态资源
     ├── bin/
     │   └── uv               # uv 二进制文件
     ├── conf/
@@ -183,7 +184,7 @@ dist/
     └── data/                # 数据目录（运行时创建）
 ```
 
-同时会生成一个 `.zip` 压缩包，方便分发：
+同时会生成一个 `.zip` 压缩包，方便分发。运行该发布包时不需要 Bun/Node.js 等 JS 运行时：
 
 ```
 dist/anthill-0.1.3-linux-x86_64.zip

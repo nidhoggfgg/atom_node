@@ -3,10 +3,10 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Package anthill with uv (no bundled Python), then zip it.
+Package anthill with uv + frontend static assets, then zip it.
 
 Usage:
-  scripts/package_bundle.sh [--uv-version X] [--uv-url URL] [--output-dir DIR] [--target TARGET] [--skip-build]
+  scripts/package_bundle.sh [--uv-version X] [--uv-url URL] [--output-dir DIR] [--target TARGET] [--skip-build] [--skip-frontend-build]
 
 Options:
   --uv-version X   uv version to bundle (default: 0.9.26 or $UV_VERSION)
@@ -14,6 +14,8 @@ Options:
   --output-dir DIR Output directory for the bundle (default: ./dist)
   --target TARGET  Cargo target triple for cross builds (e.g. x86_64-pc-windows-msvc)
   --skip-build     Skip cargo build step
+  --skip-frontend-build
+                   Skip frontend static build step
   -h, --help       Show this help
 EOF
 }
@@ -23,6 +25,7 @@ UV_URL="${UV_URL:-}"
 OUTPUT_DIR=""
 CARGO_TARGET=""
 SKIP_BUILD=0
+SKIP_FRONTEND_BUILD=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +47,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-build)
       SKIP_BUILD=1
+      shift
+      ;;
+    --skip-frontend-build)
+      SKIP_FRONTEND_BUILD=1
       shift
       ;;
     -h|--help)
@@ -225,9 +232,23 @@ fi
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/bin"
 mkdir -p "$BUNDLE_DIR/conf"
+mkdir -p "$BUNDLE_DIR/web"
 
 cp "$BIN_PATH" "$BUNDLE_DIR/$BIN_NAME"
 echo "$VERSION" > "$BUNDLE_DIR/VERSION"
+
+if [[ "$SKIP_FRONTEND_BUILD" -eq 0 ]]; then
+  FRONTEND_ENTRY="$ROOT_DIR/frontend/index.html"
+  if [[ ! -f "$FRONTEND_ENTRY" ]]; then
+    echo "Frontend entry not found: $FRONTEND_ENTRY" >&2
+    exit 1
+  fi
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required to build frontend assets. Install Bun or pass --skip-frontend-build." >&2
+    exit 1
+  fi
+  bun build "$FRONTEND_ENTRY" --outdir "$BUNDLE_DIR/web" --minify
+fi
 
 UV_EXT=""
 UV_URL_RESOLVED="$UV_URL"
